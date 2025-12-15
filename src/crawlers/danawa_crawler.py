@@ -1,9 +1,13 @@
-"""다나와 크롤러 - 웹 스크래핑만 담당"""
+"""다나와 크롤러 - 웹 스크래핑만 담당
+
+NOTE: 파일이 커지는 문제를 줄이기 위해 Playwright 브라우저/페이지 설정과
+HTTP Fast Path 구현은 `src/crawlers/danawa/` 하위 모듈로 분리되었습니다.
+"""
 import asyncio
 import random
 from typing import Optional, Dict, List
 from urllib.parse import quote
-from playwright.async_api import async_playwright, Browser, Page, TimeoutError as PlaywrightTimeoutError, Playwright
+from playwright.async_api import Browser, Page, TimeoutError as PlaywrightTimeoutError
 
 from src.core.config import settings
 from src.core.logging import logger
@@ -19,38 +23,113 @@ from src.utils.text_utils import (
     weighted_match_score,
 )
 from src.utils.url_utils import normalize_href
+from src.crawlers.danawa.http_fastpath import DanawaHttpFastPath, FastPathNoResults
+from src.crawlers.danawa.playwright_browser import ensure_shared_browser, shutdown_shared_browser as _shutdown_pw, warmup as _warmup_pw, new_page as _new_page
+from src.crawlers.danawa.playwright_pages import configure_page
 
 
 class DanawaCrawler:
     """다나와 크롤러 - SRP: 웹 스크래핑만 담당"""
+
+    # 공유 브라우저는 `src/crawlers/danawa/playwright_browser.py`에서 관리
+
+    # Playwright 동시성 제한 (서버 보호)
+    _browser_sema: Optional[asyncio.Semaphore] = None
+
+    # Fast Path 회로차단(CB)
+    _fastpath_fail_count: int = 0
+    _fastpath_open_until: float = 0.0
+    # Usage metrics
+    _metrics_fastpath_hits: int = 0
+    _metrics_fastpath_misses: int = 0
+    _metrics_playwright_hits: int = 0
+    _metrics_playwright_failures: int = 0
     
     def __init__(self) -> None:
         self.browser: Optional[Browser] = None
         self.search_url = "https://search.danawa.com/dsearch.php"
         self.product_url = "https://prod.danawa.com/info/"
-        self._playwright: Optional[Playwright] = None
+        self._http = DanawaHttpFastPath()
+
+    @classmethod
+    def _get_browser_semaphore(cls) -> asyncio.Semaphore:
+        if cls._browser_sema is None:
+            cls._browser_sema = asyncio.Semaphore(getattr(settings, "crawler_browser_concurrency", 2))
+        return cls._browser_sema
+
+    @classmethod
+    async def _acquire_browser_semaphore_with_timeout(cls, timeout: float) -> bool:
+        """세마포어를 타임아웃으로 획득 시도 후 결과 반환 (True=획득)."""
+        sem = cls._get_browser_semaphore()
+        try:
+            await asyncio.wait_for(sem.acquire(), timeout=timeout)
+            return True
+        except Exception:
+            return False
+
+    @classmethod
+    def _release_browser_semaphore(cls) -> None:
+        sem = cls._get_browser_semaphore()
+        try:
+            sem.release()
+        except Exception:
+            pass
+
+    @classmethod
+    def _metric_fastpath_hit(cls) -> None:
+        cls._metrics_fastpath_hits += 1
+
+    @classmethod
+    def _metric_fastpath_miss(cls) -> None:
+        cls._metrics_fastpath_misses += 1
+
+    @classmethod
+    def _metric_playwright_hit(cls) -> None:
+        cls._metrics_playwright_hits += 1
+
+    @classmethod
+    def _metric_playwright_failure(cls) -> None:
+        cls._metrics_playwright_failures += 1
+
+    @classmethod
+    def _fastpath_is_open(cls) -> bool:
+        return asyncio.get_running_loop().time() < cls._fastpath_open_until
+
+    @classmethod
+    def _fastpath_on_fail(cls) -> None:
+        cls._fastpath_fail_count += 1
+        threshold = getattr(settings, "crawler_fastpath_fail_threshold", 5)
+        if cls._fastpath_fail_count >= threshold:
+            open_seconds = getattr(settings, "crawler_fastpath_open_seconds", 60)
+            cls._fastpath_open_until = asyncio.get_running_loop().time() + float(open_seconds)
+            cls._fastpath_fail_count = 0
+
+    @classmethod
+    def _fastpath_on_success(cls) -> None:
+        cls._fastpath_fail_count = 0
+        cls._fastpath_open_until = 0.0
+
+    @classmethod
+    async def shutdown_shared_browser(cls) -> None:
+        """프로세스 종료 시 공유 브라우저를 정리합니다."""
+        await _shutdown_pw()
+
+    @classmethod
+    async def warmup(cls) -> None:
+        """앱 시작 시 브라우저/컨텍스트를 미리 준비해 첫 요청 지연을 줄입니다."""
+        await _warmup_pw()
     
     async def __aenter__(self) -> "DanawaCrawler":
         """Context manager 진입 - 브라우저 시작"""
-        try:
-            self._playwright = await async_playwright().start()
-            self.browser = await self._playwright.chromium.launch(
-                headless=True,
-                args=['--no-sandbox', '--disable-dev-shm-usage']
-            )
-            logger.info("Browser launched successfully")
-            return self
-        except Exception as e:
-            logger.error(f"Failed to launch browser: {e}")
-            raise BrowserException(f"Browser launch failed: {e}")
+        # Fast Path(HTTP) 성공 시 Playwright 자체가 필요 없으므로 lazy-init 합니다.
+        self.browser = None
+        return self
     
     async def __aexit__(self, exc_type, exc_val, exc_tb) -> None:
         """Context manager 종료 - 브라우저 종료"""
-        if self.browser:
-            await self.browser.close()
-            logger.info("Browser closed")
-        if self._playwright:
-            await self._playwright.stop()
+        # 공유 브라우저는 재사용하므로 여기서 닫지 않습니다.
+        # 프로세스 종료 시 shutdown_shared_browser()에서 정리합니다.
+        return
     
     async def _rate_limit(self) -> None:
         """Rate limiting - 요청 간격 조절"""
@@ -63,17 +142,10 @@ class DanawaCrawler:
     
     async def _create_page(self) -> Page:
         """새 페이지 생성 및 설정"""
-        if not self.browser:
-            raise BrowserException("Browser not initialized")
-        
-        page = await self.browser.new_page()
-        page.set_default_timeout(settings.crawler_timeout)
-        
-        await page.set_extra_http_headers({
-            'User-Agent': settings.crawler_user_agent
-        })
-        
-        return page
+        _pw, browser, _ctx = await ensure_shared_browser()
+        self.browser = browser
+        page = await _new_page()
+        return await configure_page(page)
     
     
     async def search_lowest_price(self, product_name: str, product_code: Optional[str] = None) -> Optional[Dict]:
@@ -101,10 +173,15 @@ class DanawaCrawler:
             ProductNotFoundException: 상품을 찾을 수 없을 때
             CrawlerException: 크롤링 실패 시
         """
-        if not self.browser:
-            raise BrowserException("Browser not initialized. Use 'async with' statement.")
-        
-        await self._rate_limit()
+        # 전체 시간 예산 내에서: HTTP Fast Path → Playwright Fallback
+        loop = asyncio.get_running_loop()
+        started = loop.time()
+        total_budget_ms = int(getattr(settings, "crawler_total_budget_ms", 4000))
+        http_budget_ms = int(min(getattr(settings, "crawler_http_timeout_ms", 1200), total_budget_ms))
+
+        def _remaining_budget_s() -> float:
+            elapsed_ms = int((loop.time() - started) * 1000)
+            return max(0.0, (total_budget_ms - elapsed_ms) / 1000.0)
         
         cleaned_name = clean_product_name(product_name)
         normalized_name = normalize_search_query(product_name)
@@ -112,17 +189,108 @@ class DanawaCrawler:
         
         page = None
         try:
+            # 0) Fast Path (HTTP) - pcode가 없는 경우에만 수행
+            if not product_code:
+                try:
+                    if not self._fastpath_is_open():
+                        logger.info(f"[FAST_PATH] Attempting HTTP fast path for: {cleaned_name}")
+                        from src.utils.search_optimizer import DanawaSearchHelper
+
+                        helper = DanawaSearchHelper()
+                        candidates = helper.generate_search_candidates(product_name)
+                        fast = await asyncio.wait_for(
+                            self._http.search_lowest_price(
+                                query=product_name,
+                                candidates=candidates,
+                                total_timeout_ms=http_budget_ms,
+                            ),
+                            timeout=max(0.2, http_budget_ms / 1000.0),
+                        )
+                        if fast:
+                            logger.info(f"[FAST_PATH] ✅ Success via HTTP ({fast.get('lowest_price', 0)}원)")
+                            self._fastpath_on_success()
+                            self._metric_fastpath_hit()
+                            return fast
+                        logger.info(f"[FAST_PATH] ❌ HTTP returned None, falling back to Playwright")
+                        self._fastpath_on_fail()
+                        self._metric_fastpath_miss()
+                    else:
+                        logger.info(f"[FAST_PATH] Circuit breaker OPEN, skipping HTTP fast path")
+                        self._metric_fastpath_miss()
+                except FastPathNoResults:
+                    logger.info("[FAST_PATH] ✅ No results confirmed via HTTP, skipping Playwright")
+                    raise ProductNotFoundException(f"No products found for: {product_name}")
+                except Exception as e:
+                    logger.warning(f"[FAST_PATH] ❌ Exception: {type(e).__name__}: {repr(e)}, falling back to Playwright")
+                    self._fastpath_on_fail()
+                    self._metric_fastpath_miss()
+
+            # Playwright는 전체 예산을 초과하지 않도록 남은 시간 내에서만 실행
+            remaining_s = _remaining_budget_s()
+            if remaining_s <= 0.0:
+                raise CrawlerException(f"Budget exceeded before Playwright fallback: {total_budget_ms}ms")
+            logger.info(f"[PLAYWRIGHT] Fallback mode (remaining_budget={remaining_s:.2f}s)")
+
             # 1단계: 검색 페이지에서 상품 찾기 (이미 코드가 주어지면 스킵)
             if not product_code:
                 # 원본 상품명을 기준으로 후보 생성/매칭해야 (13/15 등) 신호를 잃지 않습니다.
-                product_code = await self._search_product(product_name)
+                remaining_s = _remaining_budget_s()
+                if remaining_s <= 0.0:
+                    raise CrawlerException(f"Budget exceeded before Playwright search: {total_budget_ms}ms")
+
+                playwright_search_timeout = min(8.0, max(0.2, remaining_s))
+                sem_timeout = playwright_search_timeout + 1.0
+                acquired = await self._acquire_browser_semaphore_with_timeout(sem_timeout)
+                if not acquired:
+                    raise ProductNotFoundException(f"Concurrency busy for: {product_name}")
+                try:
+                    product_code = await asyncio.wait_for(
+                        self._search_product(product_name),
+                        timeout=playwright_search_timeout,
+                    )
+                except asyncio.TimeoutError:
+                    logger.error(f"[PLAYWRIGHT] Search timeout after {playwright_search_timeout}s")
+                    raise
+                finally:
+                    self._release_browser_semaphore()
             
             if not product_code:
                 raise ProductNotFoundException(f"No products found for: {product_name}")
             
             # 2단계: 상품 상세 페이지에서 최저가 추출
-            page = await self._create_page()
-            result = await self._get_product_lowest_price(page, product_code, cleaned_name)
+            await self._rate_limit()
+            remaining_s = _remaining_budget_s()
+            if remaining_s <= 0.0:
+                raise CrawlerException(f"Budget exceeded before Playwright detail: {total_budget_ms}ms")
+
+            playwright_detail_timeout = min(6.0, max(0.2, remaining_s))
+            sem_timeout = playwright_detail_timeout + 1.0
+            acquired = await self._acquire_browser_semaphore_with_timeout(sem_timeout)
+            if not acquired:
+                raise CrawlerException(f"Playwright concurrency busy for: {product_name}")
+            try:
+                page = await self._create_page()
+                # Playwright 내부 selector timeout은 충분히 확보
+                try:
+                    page.set_default_timeout(8000)
+                except Exception:
+                    pass
+                result = await asyncio.wait_for(
+                    self._get_product_lowest_price(page, product_code, cleaned_name),
+                    timeout=playwright_detail_timeout,
+                )
+                logger.info(f"[PLAYWRIGHT] ✅ Success ({result.get('lowest_price', 0)}원)")
+                self._metric_playwright_hit()
+            except asyncio.TimeoutError:
+                logger.error(f"[PLAYWRIGHT] Detail page timeout after {playwright_detail_timeout}s")
+                self._metric_playwright_failure()
+                raise
+            except Exception as e:
+                logger.error(f"[PLAYWRIGHT] Detail page error: {type(e).__name__}: {repr(e)}")
+                self._metric_playwright_failure()
+                raise
+            finally:
+                self._release_browser_semaphore()
             
             if not result:
                 raise ProductNotFoundException(f"No price information for: {product_name}")
@@ -278,8 +446,10 @@ class DanawaCrawler:
                 product_name = await product_name_elem.inner_text()
                 product_name = product_name.strip()
             
-            # 최저가 추이 데이터 추출
-            price_trend = await self._extract_price_trend(page)
+            # 최저가 추이 데이터는 비용이 크므로 기본 비활성화(성능 우선)
+            price_trend = []
+            if getattr(settings, "crawler_enable_price_trend", False):
+                price_trend = await self._extract_price_trend(page)
             
             # 쇼핑몰별 최저가 - Top 3 (최저가 계산은 첫 번째 기준)
             price_items = await page.query_selector_all(

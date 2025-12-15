@@ -20,6 +20,23 @@ class Settings(BaseSettings):
     crawler_max_retries: int = 3
     crawler_rate_limit_min: float = 0.5
     crawler_rate_limit_max: float = 1.5
+
+    # 하이브리드(HTTP Fast Path → Playwright Fallback) 성능 설정
+    crawler_total_budget_ms: int = 6000
+    crawler_http_timeout_ms: int = 5000
+    crawler_http_impersonate: str = "chrome110"
+    crawler_http_max_clients: int = 20
+    crawler_enable_price_trend: bool = False
+
+    # Playwright 동시성 제한(서버 터짐 방지)
+    crawler_browser_concurrency: int = 2
+
+    # Fast Path 회로차단(CB): 연속 실패 시 잠깐 Fast Path 스킵
+    crawler_fastpath_fail_threshold: int = 5
+    crawler_fastpath_open_seconds: int = 60
+
+    # Fast Path HTML 검증(캐시 오염 방지)
+    crawler_fastpath_min_html_length: int = 5000
     
     # API
     api_title: str = "최저가 탐지 서비스"
@@ -41,6 +58,20 @@ class Settings(BaseSettings):
     def validate_crawler_timeout(cls, v: int) -> int:
         if v <= 0:
             raise ValueError("crawler_timeout must be positive")
+        return v
+
+    @field_validator("crawler_total_budget_ms", "crawler_http_timeout_ms")
+    @classmethod
+    def validate_crawler_budgets(cls, v: int) -> int:
+        if v <= 0:
+            raise ValueError("crawler budgets must be positive")
+        return v
+
+    @field_validator("crawler_browser_concurrency")
+    @classmethod
+    def validate_crawler_concurrency(cls, v: int) -> int:
+        if v <= 0:
+            raise ValueError("crawler_browser_concurrency must be positive")
         return v
 
     @field_validator("database_url", "redis_url")

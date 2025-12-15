@@ -85,8 +85,8 @@ class PriceSearchService:
         
         try:
             async with DanawaCrawler() as crawler:
-                # 정규화된 검색어로 크롤링 수행
-                result = await crawler.search_lowest_price(normalized_name, product_code=product_code)
+                # 캐시는 정규화된 키를 쓰되, 크롤링은 원본명을 사용해 신호 손실을 줄입니다.
+                result = await crawler.search_lowest_price(product_name, product_code=product_code)
             
             if not result:
                 msg = "검색 결과를 찾을 수 없습니다."

@@ -15,9 +15,26 @@ async def lifespan(app: FastAPI):
     """애플리케이션 생명주기"""
     logger.info("Starting application...")
     init_db()
+    # 크롤러 리소스 워밍업(첫 요청 지연 감소)
+    try:
+        from src.crawlers.danawa_crawler import DanawaCrawler
+
+        await DanawaCrawler.warmup()
+    except Exception:
+        # 워밍업 실패가 앱 시작을 막지 않도록 무시
+        pass
     logger.info("Application started")
     yield
     logger.info("Shutting down application...")
+    try:
+        from src.crawlers.danawa_crawler import DanawaCrawler
+        from src.crawlers.http_client import shutdown_shared_http_client
+
+        await DanawaCrawler.shutdown_shared_browser()
+        await shutdown_shared_http_client()
+    except Exception:
+        # 종료 훅에서의 예외는 앱 종료를 막지 않도록 무시
+        pass
 
 
 def create_app() -> FastAPI:
@@ -49,3 +66,6 @@ def create_app() -> FastAPI:
     app.include_router(analytics_router.router)
     
     return app
+
+# 앱 인스턴스 생성 (uvicorn이 로드할 수 있도록)
+app = create_app()
