@@ -16,6 +16,7 @@ from src.utils.text_utils import (
     normalize_search_query,
     extract_model_codes,
     fuzzy_score,
+    weighted_match_score,
 )
 from src.utils.url_utils import normalize_href
 
@@ -113,8 +114,8 @@ class DanawaCrawler:
         try:
             # 1단계: 검색 페이지에서 상품 찾기 (이미 코드가 주어지면 스킵)
             if not product_code:
-                # 정규화된 검색어로 먼저 시도
-                product_code = await self._search_product(normalized_name or cleaned_name)
+                # 원본 상품명을 기준으로 후보 생성/매칭해야 (13/15 등) 신호를 잃지 않습니다.
+                product_code = await self._search_product(product_name)
             
             if not product_code:
                 raise ProductNotFoundException(f"No products found for: {product_name}")
@@ -178,34 +179,33 @@ class DanawaCrawler:
             if not found:
                 return None
             
-            # 범용적인 링크 수집: pcode가 포함된 모든 링크 검색 후 유사도 기반으로 선택
-            candidates_links = await page.query_selector_all('a[href*="pcode="]')
-            if not candidates_links:
+            # 검색 결과(여러 개)에서 "원본 쿼리"와 가장 일치하는 상품을 선택
+            href = None
+            best_href = None
+            best_score = 0.0
+
+            prod_links = await page.query_selector_all('.prod_item .prod_name a[href*="pcode="]')
+            links_to_score = prod_links[:12] if prod_links else await page.query_selector_all('a[href*="pcode="]')
+            if not links_to_score:
                 return None
 
-            # 우선적으로 prod_item .prod_name a 형태를 찾고, 없으면 모든 a[href*="pcode="]을 사용
-            first_product = await page.query_selector('.prod_item .prod_name a')
-            href = None
-            if first_product:
-                href = await first_product.get_attribute('href')
+            for link in links_to_score:
+                try:
+                    link_text = (await link.inner_text()) or (await link.get_attribute('title')) or ''
+                    score = weighted_match_score(search_query, link_text)
+                    logger.debug(f"Candidate link text: {link_text[:100]} score={score}")
+                    if score > best_score:
+                        best_score = score
+                        best_href = await link.get_attribute('href')
+                except Exception:
+                    continue
 
-            if not href:
-                # 가장 유사한 텍스트를 가진 링크 선택
-                best_href = None
-                best_score = 0.0
-                for link in candidates_links:
-                    try:
-                        link_text = (await link.inner_text()) or (await link.get_attribute('title')) or ''
-                        # fuzzy_score(0~100) 사용
-                        q = candidates[0] if candidates else search_query
-                        score = fuzzy_score(q, link_text)
-                        logger.debug(f"Candidate link text: {link_text[:100]} score={score}")
-                        if score > best_score:
-                            best_score = score
-                            best_href = await link.get_attribute('href')
-                    except Exception:
-                        continue
+            # 너무 낮은 점수면(검색 결과가 엉뚱함) 첫 번째 결과로 폴백
+            if best_href and best_score >= 60.0:
                 href = best_href
+            else:
+                first_product = await page.query_selector('.prod_item .prod_name a[href*="pcode="]')
+                href = await first_product.get_attribute('href') if first_product else best_href
 
             if not href or 'pcode=' not in href:
                 return None

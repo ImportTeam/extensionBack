@@ -7,6 +7,7 @@ from src.utils.text_utils import (
 )
 from src.utils.text_utils import split_kr_en_boundary
 from src.utils.text_utils import normalize_search_query, extract_model_codes
+from src.utils.text_utils import is_accessory_trap, weighted_match_score
 
 
 class TestCleanProductName:
@@ -113,10 +114,10 @@ def test_normalize_search_query_removes_specs():
     raw = "베이직스 2024 베이직북 14 N-시리즈BasicWhite · 256GB · 8GB · WIN11 Home · BB1422SS-N"
     norm = normalize_search_query(raw)
     # 구분자(·) 이후의 스펙은 제거되고, 구분자 이전의 내용 + 제거된 스펙 토큰 정리
-    assert "2024" not in norm
     assert "256GB" not in norm.upper()
     assert "WIN11" not in norm.upper()
-    # 개선된 정규화: 구분자 이후는 모두 버리므로 "베이직스 베이직북 14"만 남음
+    assert "BB1422SS-N" not in norm
+    # 개선된 정규화: 구분자 이후는 모두 버리므로 핵심 상품명만 남음
     assert "베이직스" in norm
     assert "베이직북" in norm
 
@@ -126,3 +127,17 @@ def test_extract_model_codes():
     raw = "베이직스 2024 베이직북 14 N-시리즈BasicWhite · 256GB · 8GB · WIN11 Home · BB1422SS-N"
     codes = extract_model_codes(raw)
     assert "BB1422SS-N" in codes
+
+
+def test_accessory_trap_filters_keyskin_for_main_product_query():
+    query = "Apple 2025 맥북 에어 13 M4"
+    accessory = "트루커버 애플 2025 맥북에어13 M4 파스텔톤 컬러 키스킨 (핑크 (블랙자판)) VS검색하기 VS검색 도움말"
+    assert is_accessory_trap(query, accessory) is True
+    assert weighted_match_score(query, accessory) == 0.0
+
+
+def test_accessory_trap_allows_when_user_searches_accessory():
+    query = "맥북 에어 13 키스킨"
+    accessory = "트루커버 애플 2025 맥북에어13 M4 파스텔톤 컬러 키스킨"
+    assert is_accessory_trap(query, accessory) is False
+    assert weighted_match_score(query, accessory) > 0.0
