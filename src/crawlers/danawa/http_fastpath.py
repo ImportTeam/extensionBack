@@ -20,6 +20,7 @@ from .http_fastpath_parsing import (
     has_product_fingerprint,
     parse_search_pcandidates,
     parse_product_lowest_price,
+    get_blocked_keyword,
 )
 
 
@@ -29,6 +30,15 @@ class FastPathNoResults(Exception):
     이 경우는 네트워크/차단 실패가 아니므로 Playwright로 폴백하지 않도록
     상위 레이어에서 별도 처리하는 것이 바람직합니다.
     """
+
+
+class FastPathProductFetchFailed(Exception):
+    """Fast Path에서 pcode는 찾았지만, 상품 상세(fetch/파싱)에 실패한 경우."""
+
+    def __init__(self, pcode: str, reason: str) -> None:
+        super().__init__(f"FastPath product fetch failed for pcode={pcode}: {reason}")
+        self.pcode = pcode
+        self.reason = reason
 
 
 class DanawaHttpFastPath:
@@ -42,7 +52,9 @@ class DanawaHttpFastPath:
         timeout_s = max(0.2, timeout_ms / 1000.0)
 
         try:
-            logger.info(f"[FAST_PATH_HTTP] Fetching {url[:80]}... (timeout={timeout_s:.1f}s)")
+            # Log URL with reasonable truncation (120 chars) for debugging
+            url_display = url if len(url) <= 120 else url[:120] + "..."
+            logger.info(f"[FAST_PATH_HTTP] Fetching {url_display} (timeout={timeout_s:.1f}s)")
             client = get_shared_http_client()
             res = await client.get_text(url, timeout_s=timeout_s)
             if not res:
@@ -52,7 +64,11 @@ class DanawaHttpFastPath:
                 logger.info(f"[FAST_PATH_HTTP] Non-200 status: {status}")
                 return None
             if not html or is_probably_invalid_html(html):
-                logger.info(f"[FAST_PATH_HTTP] Blocked or invalid HTML (len={len(html) if html else 0})")
+                kw = get_blocked_keyword(html or "")
+                if kw:
+                    logger.info(f"[FAST_PATH_HTTP] Blocked or invalid HTML (len={len(html) if html else 0}, blocked_keyword={kw})")
+                else:
+                    logger.info(f"[FAST_PATH_HTTP] Blocked or invalid HTML (len={len(html) if html else 0})")
                 return None
             logger.info(f"[FAST_PATH_HTTP] OK (len={len(html)})")
             return html
@@ -93,23 +109,17 @@ class DanawaHttpFastPath:
 
         max_candidates = 2
 
-        # 사전 probe: 호스트 접근성이 약하면 바로 실패 처리
-        try:
-            probe_ok = await self._probe_host(self.search_url, timeout_ms=min(total_timeout_ms, 2000))
-            if not probe_ok:
-                logger.info("[FAST_PATH] Host probe failed, skipping HTTP fast path")
-                return None
-        except Exception:
-            logger.info("[FAST_PATH] Host probe exception, skipping HTTP fast path")
-
+        # Note: Probing removed to save time. We'll fail fast on actual fetch if host is down.
         chosen_pcode: Optional[str] = None
+        # 개별 요청마다 고정 타임아웃 적용 (phase budget과 분리)
+        per_try_ms = int(getattr(settings, "crawler_http_request_timeout_ms", getattr(settings, "crawler_http_timeout_ms", 4000)))
+        
         for idx, cand in enumerate(candidates[:max_candidates]):
             remaining_search_ms = int(max(0.0, (search_deadline - loop.time()) * 1000.0))
             if remaining_search_ms <= 0:
                 logger.info("[FAST_PATH] Search budget exhausted before search fetch")
                 break
 
-            per_try_ms = int(min(max(300, getattr(settings, "crawler_http_timeout_ms", 2000)), remaining_search_ms))
             search_url = f"{self.search_url}?query={quote(cand)}&originalQuery={quote(cand)}"
             html = await self._fetch_html(search_url, timeout_ms=per_try_ms)
             if not html:
@@ -129,35 +139,33 @@ class DanawaHttpFastPath:
             pcodes = parse_search_pcandidates(html, query=query, max_candidates=12)
             if pcodes:
                 chosen_pcode = pcodes[0]
-                logger.info(f"[FAST_PATH] Chosen pcode={chosen_pcode} from candidate {idx+1}")
-                break
+                logger.info(f"[FAST_PATH] ✅ SUCCESS - Found pcode={chosen_pcode} from candidate {idx+1} (will skip remaining candidates)")
+                break  # 성공하면 더 이상 시도 안 함
 
         if not chosen_pcode:
             logger.info("[FAST_PATH] No pcode found from any candidate")
             return None
 
-        remaining_ms = int(max(0.0, (deadline - loop.time()) * 1000.0))
-        if remaining_ms <= 0:
-            logger.info("[FAST_PATH] Budget exhausted before product fetch")
-            return None
-
+        # Product page fetch: 상품 상세는 더 느릴 수 있어 별도 타임아웃을 둡니다.
+        product_timeout_ms = int(getattr(settings, "crawler_http_product_timeout_ms", 6000))
+        
         product_url = f"{self.product_url}?pcode={chosen_pcode}&keyword={quote(query)}"
-        html = await self._fetch_html(product_url, timeout_ms=max(300, remaining_ms))
+        html = await self._fetch_html(product_url, timeout_ms=product_timeout_ms)
         if not html:
             logger.info(f"[FAST_PATH] Product page fetch failed for pcode={chosen_pcode}")
-            return None
+            raise FastPathProductFetchFailed(chosen_pcode, "fetch_failed")
 
         try:
             if not has_product_fingerprint(html):
                 logger.info(f"[FAST_PATH] No product fingerprint found for pcode={chosen_pcode}")
-                return None
+                raise FastPathProductFetchFailed(chosen_pcode, "no_product_fingerprint")
         except Exception:
-            return None
+            raise FastPathProductFetchFailed(chosen_pcode, "fingerprint_exception")
 
         parsed = parse_product_lowest_price(html, fallback_name=query, product_url=product_url)
         if not parsed:
             logger.info(f"[FAST_PATH] Parsing failed for pcode={chosen_pcode}")
-            return None
+            raise FastPathProductFetchFailed(chosen_pcode, "parse_failed")
 
         from datetime import datetime
 

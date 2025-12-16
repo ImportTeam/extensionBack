@@ -1,0 +1,91 @@
+version: 1
+# 태그(세부 속성) 정의: "웬만한 상품 태그"를 포괄할 수 있도록 범용 네임스페이스로 구성
+# 원칙:
+# - detect는 tag를 부여만 한다 (삭제/치환/정규화 판단 금지)
+# - normalize는 domain + tags를 보고 정책을 적용한다
+
+namespaces:
+  - name: domain
+    description: 상위 도메인(카테고리)
+  - name: brand
+    description: 브랜드/제조사
+  - name: product
+    description: 제품/라인업(선택)
+  - name: product_type
+    description: 제품 유형(케이스/필름/라면/샴푸 등)
+  - name: attr
+    description: 속성(색상/용량/호수/세대/포트/재질/맛 등)
+
+# 최소 샘플(확장은 무한)
+# id는 문자열로만 다루고, 계층은 점(.)으로 표현
+
+tags:
+  # 도메인
+  - id: domain.electronics
+    label_ko: 전자/IT
+  - id: domain.food
+    label_ko: 식품
+  - id: domain.fashion
+    label_ko: 패션
+  - id: domain.beauty
+    label_ko: 뷰티
+  - id: domain.general
+    label_ko: 일반
+
+  # 브랜드
+  - id: brand.apple
+    label_ko: 애플
+    aliases: ["Apple", "애플"]
+  - id: brand.samsung
+    label_ko: 삼성
+    aliases: ["Samsung", "삼성", "삼성전자"]
+  - id: brand.nongshim
+    label_ko: 농심
+    aliases: ["농심"]
+
+  # 제품/라인업(선택: 정규화/매칭 정밀도를 높일 때 사용)
+  - id: product.apple.airpods
+    label_ko: 에어팟
+    aliases: ["에어팟", "AirPods"]
+  - id: product.apple.airpods_pro
+    label_ko: 에어팟 프로
+    aliases: ["에어팟 프로", "AirPods Pro"]
+  - id: product.nongshim.shinramyun
+    label_ko: 신라면
+    aliases: ["신라면"]
+
+  # 제품 유형
+  - id: product_type.device
+    label_ko: 기기(본체)
+  - id: product_type.accessory
+    label_ko: 액세서리
+  - id: product_type.case
+    label_ko: 케이스
+    parents: ["product_type.accessory"]
+  - id: product_type.protective_film
+    label_ko: 보호필름
+    parents: ["product_type.accessory"]
+  - id: product_type.ramen
+    label_ko: 라면
+    parents: []
+
+  # 속성(범용)
+  - id: attr.color.black
+    label_ko: 블랙
+    aliases: ["블랙", "black", "검정", "흑색"]
+  - id: attr.color.white
+    label_ko: 화이트
+    aliases: ["화이트", "white", "흰색"]
+  - id: attr.generation
+    label_ko: 세대
+  - id: attr.connector.usb_c
+    label_ko: USB-C
+    aliases: ["USB-C", "Type-C", "C타입"]
+  - id: attr.capacity
+    label_ko: 용량
+  - id: attr.size
+    label_ko: 사이즈
+  - id: attr.flavor
+    label_ko: 맛/향
+  - id: attr.shade_number
+    label_ko: 호수(21호 등)

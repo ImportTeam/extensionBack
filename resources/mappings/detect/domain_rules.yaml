@@ -1,0 +1,50 @@
+version: 1
+# 도메인 분류 규칙
+# 원칙: 이 파일은 "도메인 판단"만 한다. (정규화 삭제/치환 로직 금지)
+
+rules:
+  - id: domain_rule_electronics_strong
+    domain: domain.electronics
+    mode: score
+    signals:
+      any_contains:
+        - "맥북"
+        - "아이폰"
+        - "아이패드"
+        - "에어팟"
+        - "갤럭시"
+        - "노트북"
+        - "태블릿"
+        - "rtx"
+        - "ssd"
+        - "usb"
+      any_regex:
+        - "\\b\\d+\\s*(GB|TB|MHz|GHz|Hz)\\b"
+        - "(?i)\\bM\\s*\\d+\\b"
+    threshold: 2
+    weights:
+      contains: 1
+      regex: 1
+
+  - id: domain_rule_food_strong
+    domain: domain.food
+    mode: score
+    signals:
+      any_contains:
+        - "라면"
+        - "컵라면"
+        - "김치"
+        - "된장"
+        - "고추장"
+        - "간장"
+        - "햇반"
+      any_regex:
+        - "\\b\\d+\\s*(g|kg|ml|l|개|팩|봉|캔|병)\\b"
+    threshold: 2
+    weights:
+      contains: 1
+      regex: 1
+
+  - id: domain_rule_default
+    domain: domain.general
+    mode: default

@@ -30,6 +30,7 @@ class PriceTrendPoint(BaseModel):
 
 class PriceData(BaseModel):
     """가격 정보"""
+    product_name: str = Field(..., description="찾은 상품명")
     is_cheaper: bool = Field(..., description="더 저렴한지 여부")
     price_diff: int = Field(..., description="가격 차이")
     lowest_price: int = Field(..., ge=0, description="최저가")

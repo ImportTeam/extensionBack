@@ -1,0 +1,38 @@
+version: 1
+# 도메인별 정책: "무엇을 지울지"는 여기서 결정
+
+by_domain:
+  domain.electronics:
+    remove_colors: true
+    remove_units: true
+    remove_accessory_terms: true
+    preserve_numbers: true
+    preserve_generation_numbers: true
+    preserve_connector_tokens: true
+
+  domain.food:
+    remove_colors: false
+    remove_units: false
+    remove_accessory_terms: false
+    preserve_numbers: true
+    preserve_generation_numbers: true
+    preserve_flavor_tokens: true
+
+  domain.fashion:
+    remove_colors: false
+    remove_units: false
+    remove_accessory_terms: false
+    preserve_numbers: true
+    preserve_size_tokens: true
+
+  domain.beauty:
+    remove_colors: false
+    remove_units: false
+    preserve_numbers: true
+    preserve_shade_numbers: true
+
+  domain.general:
+    remove_colors: false
+    remove_units: false
+    remove_accessory_terms: false
+    preserve_numbers: true

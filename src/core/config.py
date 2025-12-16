@@ -22,8 +22,14 @@ class Settings(BaseSettings):
     crawler_rate_limit_max: float = 1.5
 
     # 하이브리드(HTTP Fast Path → Playwright Fallback) 성능 설정
-    crawler_total_budget_ms: int = 6000
-    crawler_http_timeout_ms: int = 5000
+    # NOTE: 기본값은 '안정성 우선'으로 여유있게 설정합니다.
+    # - crawler_http_timeout_ms: HTTP fast path 전체 예산
+    # - crawler_http_request_timeout_ms: HTTP 단일 요청 타임아웃(검색 페이지 등)
+    # - crawler_http_product_timeout_ms: HTTP 상품 상세 페이지 타임아웃
+    crawler_total_budget_ms: int = 12000
+    crawler_http_timeout_ms: int = 9000
+    crawler_http_request_timeout_ms: int = 5000
+    crawler_http_product_timeout_ms: int = 7000
     crawler_http_impersonate: str = "chrome110"
     crawler_http_max_clients: int = 20
     crawler_enable_price_trend: bool = False
@@ -31,12 +37,20 @@ class Settings(BaseSettings):
     # Playwright 동시성 제한(서버 터짐 방지)
     crawler_browser_concurrency: int = 2
 
+    # 앱 시작 시 Playwright 브라우저를 미리 띄울지 여부
+    # 기본값은 False: 요청에서 HTTP Fast Path가 실패할 때만 lazy-launch
+    crawler_playwright_warmup: bool = False
+
     # Fast Path 회로차단(CB): 연속 실패 시 잠깐 Fast Path 스킵
     crawler_fastpath_fail_threshold: int = 5
     crawler_fastpath_open_seconds: int = 60
 
     # Fast Path HTML 검증(캐시 오염 방지)
     crawler_fastpath_min_html_length: int = 5000
+
+    # Fast Path 파싱에서 너무 싼 가격(액세서리/오탐) 배제용 하한
+    # 0이면 비활성화
+    crawler_min_price_threshold: int = 0
     
     # API
     api_title: str = "최저가 탐지 서비스"
@@ -58,6 +72,13 @@ class Settings(BaseSettings):
     def validate_crawler_timeout(cls, v: int) -> int:
         if v <= 0:
             raise ValueError("crawler_timeout must be positive")
+        return v
+
+    @field_validator("crawler_min_price_threshold")
+    @classmethod
+    def validate_crawler_min_price_threshold(cls, v: int) -> int:
+        if v < 0:
+            raise ValueError("crawler_min_price_threshold must be >= 0")
         return v
 
     @field_validator("crawler_total_budget_ms", "crawler_http_timeout_ms")

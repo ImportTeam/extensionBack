@@ -1,0 +1,10 @@
+{
+  "$schema": "https://json-schema.org/draft/2020-12/schema",
+  "title": "Normalization Policies Schema",
+  "type": "object",
+  "required": ["version"],
+  "properties": {
+    "version": {"type": "integer", "minimum": 1}
+  },
+  "additionalProperties": true
+}

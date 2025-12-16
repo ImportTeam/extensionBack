@@ -1,0 +1,64 @@
+version: 1
+# 태그 매핑 규칙
+# 원칙: 이 파일은 "태그를 부여"만 한다. (삭제/치환 판단 금지)
+
+rules:
+  # 색상(범용) - 도메인과 무관하게 태그 부여
+  - id: tag_color_black
+    match:
+      type: any_of
+      keywords: ["블랙", "black", "검정", "흑색"]
+    emit_tags: ["attr.color.black"]
+
+  - id: tag_color_white
+    match:
+      type: any_of
+      keywords: ["화이트", "white", "흰색"]
+    emit_tags: ["attr.color.white"]
+
+  # 세대(범용)
+  - id: tag_generation
+    match:
+      type: regex
+      pattern: "(?i)\\b\\d+\\s*세대\\b"
+    emit_tags: ["attr.generation"]
+
+  # USB-C 계열(범용)
+  - id: tag_usb_c
+    match:
+      type: any_of
+      keywords: ["USB-C", "usb-c", "Type-C", "type-c", "C타입"]
+    emit_tags: ["attr.connector.usb_c"]
+
+  # 액세서리(범용)
+  - id: tag_product_type_case
+    match:
+      type: any_of
+      keywords: ["케이스", "커버", "키스킨"]
+    emit_tags: ["product_type.case"]
+
+  - id: tag_product_type_film
+    match:
+      type: any_of
+      keywords: ["필름", "보호필름", "강화유리"]
+    emit_tags: ["product_type.protective_film"]
+
+  # 라면(범용)
+  - id: tag_product_type_ramen
+    match:
+      type: any_of
+      keywords: ["라면", "컵라면"]
+    emit_tags: ["product_type.ramen"]
+
+  # 브랜드 예시
+  - id: tag_brand_apple
+    match:
+      type: any_of
+      keywords: ["애플", "Apple"]
+    emit_tags: ["brand.apple"]
+
+  - id: tag_brand_nongshim
+    match:
+      type: any_of
+      keywords: ["농심"]
+    emit_tags: ["brand.nongshim"]

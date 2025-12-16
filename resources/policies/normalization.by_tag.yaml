@@ -1,0 +1,34 @@
+version: 1
+# 태그별 정책: 도메인 정책을 보강/예외 처리
+# 예: attr.color.black은 food 도메인에서는 보존, electronics에서는 제거(기본)
+
+by_tag:
+  attr.color.black:
+    # 도메인별 override
+    overrides:
+      domain.food:
+        action: preserve
+      domain.fashion:
+        action: preserve
+      domain.electronics:
+        action: remove
+
+  attr.generation:
+    # "2세대"를 지우지 말고 "2"로 치환하도록 강제하는 목적
+    action: replace
+    replace_pattern: "(?i)\\b(\\d+)\\s*세대\\b"
+    replace_with: "\\1"
+
+  attr.connector.usb_c:
+    action: replace
+    replace_pattern: "(?i)\\b(USB\\s*-?\\s*C|Type\\s*-?\\s*C|C\\s*타입)\\b"
+    replace_with: "C"
+
+  product_type.case:
+    # 케이스는 food/fashion에서 중요한 경우가 있어 기본 preserve.
+    # electronics에서는 accessory trap 가능성이 높으므로 remove 권장.
+    overrides:
+      domain.electronics:
+        action: remove
+      domain.general:
+        action: preserve

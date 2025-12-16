@@ -11,9 +11,10 @@ models_module = importlib.util.module_from_spec(spec)
 spec.loader.exec_module(models_module)
 
 SearchLog = models_module.SearchLog
+PriceCache = getattr(models_module, "PriceCache", None)
 
 # SearchFailure 모델 (이 패키지 내)
 from src.repositories.models.search_failure import SearchFailure
 
-__all__ = ["SearchFailure", "SearchLog"]
+__all__ = ["SearchFailure", "SearchLog", "PriceCache"]
 

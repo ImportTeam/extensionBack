@@ -21,12 +21,33 @@ def clean_product_name(product_name: str) -> str:
     """
     if not product_name:
         return ""
-    
-    # 대괄호 안의 내용 제거
-    cleaned = re.sub(r'\[.*?\]', '', product_name)
-    
-    # 소괄호 안의 내용 제거
-    cleaned = re.sub(r'\(.*?\)', '', cleaned)
+
+    def _extract_m_chips(text: str) -> list[str]:
+        # 'M5', 'm5', 'M5모델' 등 다양한 표기를 모두 포착
+        chips = []
+        for m in re.finditer(r"(?i)M\s*(\d+)", text or ""):
+            n = m.group(1)
+            if n:
+                chips.append(f"M{n}")
+        # 중복 제거 (순서 유지)
+        seen: set[str] = set()
+        out: list[str] = []
+        for c in chips:
+            if c not in seen:
+                seen.add(c)
+                out.append(c)
+        return out
+
+    def _preserve_important_tokens(match: re.Match[str]) -> str:
+        inner = match.group(1) or ""
+        chips = _extract_m_chips(inner)
+        if not chips:
+            return " "
+        return " " + " ".join(chips) + " "
+
+    # 대괄호/소괄호 내용은 보통 옵션/노이즈지만, 칩셋(M1~) 같은 핵심 토큰은 보존
+    cleaned = re.sub(r"\[(.*?)\]", _preserve_important_tokens, product_name)
+    cleaned = re.sub(r"\((.*?)\)", _preserve_important_tokens, cleaned)
     
     # 특수문자 제거 (하이픈, 언더스코어는 유지)
     cleaned = re.sub(r'[^\w\s\-_가-힣]', '', cleaned)

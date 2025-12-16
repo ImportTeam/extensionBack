@@ -31,10 +31,11 @@ def get_cache_service() -> CacheService:
 
 
 def get_price_service(
-    cache_service: CacheService = Depends(get_cache_service)
+    cache_service: CacheService = Depends(get_cache_service),
+    db: Session = Depends(get_db),
 ) -> PriceSearchService:
     """PriceSearchService 인스턴스 제공"""
-    return PriceSearchService(cache_service)
+    return PriceSearchService(cache_service, db_session=db)
 
 
 @router.post("/price/search", response_model=PriceSearchResponse)
@@ -83,6 +84,7 @@ async def search_price(
             return PriceSearchResponse(
                 status="success",
                 data=PriceData(
+                    product_name=result.get("product_name", request.product_name),
                     is_cheaper=result["is_cheaper"],
                     price_diff=result["price_diff"],
                     lowest_price=result["lowest_price"],

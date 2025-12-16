@@ -11,7 +11,7 @@
   "scripts": {
     "start" : "uvicorn main:app --reload --port 8000",
     "test": "pytest tests/",
-    "type check": "mypy .",
+    "type-check": "mypy .",
     "clear" : "clear clear",
     "clear all" : "find . -type f -name '*.pyc' -delete && find . -type d -name '__pycache__' -delete"
   }

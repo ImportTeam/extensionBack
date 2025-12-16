@@ -6,9 +6,11 @@ from src.services.cache_service import CacheService
 from src.crawlers.danawa_crawler import DanawaCrawler
 from src.repositories.search_log_repository import SearchLogRepository
 from src.repositories.search_failure_repository import SearchFailureRepository
+from src.repositories.price_cache_repository import PriceCacheRepository
 from src.utils.search_optimizer import DanawaSearchHelper
 from src.core.logging import logger
 from src.core.exceptions import ProductNotFoundException, CrawlerException
+from src.core.config import settings
 
 
 class PriceSearchService:
@@ -79,6 +81,27 @@ class PriceSearchService:
         if negative_message:
             logger.info(f"Negative cache hit for: {search_key}")
             return self._build_error_response(negative_message)
+
+        # 1-2. DB 영속 캐시 확인 (Redis 미스/부정 캐시 없음)
+        # DB에 저장된 깨끗한 product_name을 재사용하여 매번 정규화 작업을 피함
+        if self.db_session is not None:
+            db_cached = PriceCacheRepository(self.db_session).get_fresh(
+                cache_key=search_key,
+                max_age_seconds=int(settings.cache_ttl),
+            )
+            if db_cached:
+                # Redis에도 재적재하여 이후 요청은 더 빠르게
+                try:
+                    self.cache_service.set(search_key, db_cached)
+                except Exception:
+                    pass
+                logger.info(f"DB cache hit for key: {search_key}, product_name={db_cached.get('product_name', 'N/A')}")
+                return self._build_response(
+                    result=db_cached,
+                    current_price=current_price,
+                    status="HIT",
+                    message="DB 캐시에서 발견했습니다.",
+                )
         
         # 2. 크롤링 수행
         logger.info(f"Cache miss, crawling for: {search_key}")
@@ -95,6 +118,17 @@ class PriceSearchService:
             
             # 3. 캐싱
             self.cache_service.set(search_key, result)
+
+            # 3-1. DB에도 영속 캐시 저장 (선택)
+            # DB에 저장된 깨끗한 product_name을 다음 요청에서 재사용할 수 있음
+            if self.db_session is not None:
+                try:
+                    logger.debug(f"Saving to DB cache: {search_key}, product_name={result.get('product_name', 'N/A')}")
+                    PriceCacheRepository(self.db_session).upsert(search_key, result)
+                except Exception as e:
+                    # DB 캐시 실패는 기능적 실패가 아니므로 무시
+                    logger.warning(f"DB cache write failed: {e}")
+                    pass
             
             return self._build_response(
                 result=result,
@@ -149,6 +183,7 @@ class PriceSearchService:
         message: str
     ) -> Dict:
         """성공 응답 생성"""
+        product_name = result.get("product_name", "")
         lowest_price = result.get("lowest_price", 0)
         link = result.get("link", "")
         mall = result.get("mall")
@@ -164,6 +199,7 @@ class PriceSearchService:
             price_diff = lowest_price - current_price
         
         return {
+            "product_name": product_name,
             "lowest_price": lowest_price,
             "link": link,
             "mall": mall,
@@ -179,6 +215,7 @@ class PriceSearchService:
     def _build_error_response(self, message: str) -> Dict:
         """실패 응답 생성"""
         return {
+            "product_name": "",
             "lowest_price": 0,
             "link": "",
             "mall": None,

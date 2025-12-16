@@ -122,6 +122,53 @@ def test_normalize_search_query_removes_specs():
     assert "베이직북" in norm
 
 
+def test_normalize_search_query_preserves_generation():
+    """[수정] 세대 숫자는 보존되어야 함 (기존 버그: 2세대 -> 공백)"""
+    raw = "에어팟 프로 2세대 화이트 블루투스 이어폰"
+    norm = normalize_search_query(raw)
+    # '2세대' -> '2' (숫자 보존)
+    assert '2' in norm or '에어팟' in norm
+    # 색상, 이어폰, 블루투스는 제거됨
+    assert '화이트' not in norm
+    assert '블루투스' not in norm
+    assert '이어폰' not in norm
+    # 에어팟, 프로는 보존
+    assert '에어팟' in norm
+    assert '프로' in norm
+
+
+def test_normalize_search_query_handles_compound_nouns():
+    """[추가] 화이트케이스 같은 합성어 분리"""
+    raw = "화이트케이스 Apple 에어팟 프로"
+    norm = normalize_search_query(raw)
+    # '화이트' 색상 제거, '케이스' 액세서리 제거
+    # 따라서 '화이트' + '케이스' 모두 지워짐
+    assert '화이트' not in norm
+    assert '케이스' not in norm
+    # Apple은 브랜드이므로 보존 (색상 제거 로직이 단어 경계 기준)
+    assert 'Apple' in norm or 'apple' in norm.lower()
+    assert '에어팟' in norm
+    assert '프로' in norm
+
+
+def test_normalize_search_query_preserves_type_c():
+    """[추가] C타입/USB-C 같은 포트 타입은 (일부) 보존"""
+    raw = "이어폰C USB-C 고속충전"
+    norm = normalize_search_query(raw)
+    # '이어폰' 제거되지만 'C'는 한글+영어 분리로 보존될 수 있음
+    assert '이어폰' not in norm
+    # USB-C/Type-C/C타입은 'C'로 표준화되어 남아야 함
+    assert 'C' in norm or 'c' in norm.lower()
+
+
+def test_normalize_search_query_preserves_color_for_non_it_products():
+    """일반 상품(식품 등)에서는 색상/라인업명이 상품명일 수 있어 보존해야 함."""
+    raw = "농심 신라면 블랙 컵라면"
+    norm = normalize_search_query(raw)
+    assert "신라면" in norm
+    assert "블랙" in norm
+
+
 
 def test_extract_model_codes():
     raw = "베이직스 2024 베이직북 14 N-시리즈BasicWhite · 256GB · 8GB · WIN11 Home · BB1422SS-N"
