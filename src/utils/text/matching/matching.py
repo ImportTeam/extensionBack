@@ -1,0 +1,189 @@
+"""Weighted matching helpers."""
+
+from __future__ import annotations
+
+import re
+
+from src.core.logging import logger
+
+from .signals import extract_product_signals
+from .similarity import fuzzy_score
+from ..core.tokenize import tokenize_keywords
+from ..core.cleaning import clean_product_name, split_kr_en_boundary
+
+
+def is_accessory_trap(query: str, candidate: str) -> bool:
+    if not query or not candidate:
+        return False
+
+    accessory_keywords = {
+        "케이스",
+        "커버",
+        "키스킨",
+        "스킨",
+        "필름",
+        "보호필름",
+        "강화유리",
+        "거치대",
+        "스탠드",
+        "파우치",
+        "가방",
+        "충전기",
+        "어댑터",
+        "케이블",
+        "허브",
+        "젠더",
+        "독",
+        "도킹",
+        "키보드커버",
+        "키보드덮개",
+        "교체용",
+        "전용",
+        "호환",
+        "리필",
+        "리필용",
+        "스티커",
+        "보호",
+        "케이스형",
+        "키캡",
+        "키패드",
+    }
+
+    main_product_hints = {
+        "노트북",
+        "랩탑",
+        "맥북",
+        "울트라북",
+        "태블릿",
+        "아이패드",
+        "스마트폰",
+        "핸드폰",
+        "아이폰",
+        "갤럭시",
+        "모니터",
+        "tv",
+        "데스크탑",
+        "본체",
+        "카메라",
+        "렌즈",
+        "이어폰",
+        "헤드폰",
+        "스피커",
+        "마우스",
+    }
+
+    q_tokens = tokenize_keywords(query)
+    c_tokens = tokenize_keywords(candidate)
+
+    suspicious = c_tokens.intersection(accessory_keywords)
+    if not suspicious:
+        return False
+
+    if not suspicious.isdisjoint(q_tokens):
+        return False
+
+    if q_tokens.isdisjoint(main_product_hints):
+        return False
+
+    return True
+
+
+def weighted_match_score(query: str, candidate: str) -> float:
+    if not query or not candidate:
+        return 0.0
+
+    if is_accessory_trap(query, candidate):
+        return 0.0
+
+    base = fuzzy_score(query, candidate)
+
+    q = extract_product_signals(query)
+    c = extract_product_signals(candidate)
+
+    score = base
+
+    # [핵심] 제품군(Pro/Air/Max/Mini) 불일치 - 강한 필터
+    ipad_variants = {"pro", "air", "max", "mini"}
+    q_ipad = any(word in query.lower() for word in ipad_variants)
+    c_ipad = any(word in candidate.lower() for word in ipad_variants)
+
+    if q_ipad and c_ipad:
+        # 둘 다 iPad인데 variant가 다르면 (Pro vs Air)
+        q_variant = [w for w in ipad_variants if w in query.lower()]
+        c_variant = [w for w in ipad_variants if w in candidate.lower()]
+        if q_variant and c_variant and q_variant != c_variant:
+            logger.debug(f"iPad variant mismatch: query={q_variant} vs candidate={c_variant}")
+            score -= 50.0  # 강한 패널티
+
+    # [핵심] CPU/칩셋 정보 추출 및 비교 (M5 vs M3 등)
+    # - 쿼리가 특정 M칩을 요구하고 후보가 다른 M칩을 명시하면: 하드 제외(0점)
+    # - 둘 다 같은 M칩이면 보너스
+    m_chip_pattern = r"(?i)M\s*(\d+)"  # M1, M2, ... (공백/붙임 허용)
+    q_chips = set(re.findall(m_chip_pattern, query))
+    c_chips = set(re.findall(m_chip_pattern, candidate))
+
+    if q_chips and c_chips and q_chips != c_chips:
+        logger.debug(f"Chip mismatch (disqualify): query={q_chips} vs candidate={c_chips}")
+        return 0.0
+    if q_chips and c_chips and q_chips == c_chips:
+        score += 5.0
+
+    # [핵심] 화면 크기(11/13/15 등) 불일치 - 하드 제외
+    # iPad Pro 11 vs 13, MacBook 13 vs 15 등은 완전히 다른 제품
+    screen_size_pattern = r"\b(10|11|12|13|14|15|16|17)(?:\s*인치|\s*inch|\s*\")?"
+    q_screen = set(re.findall(screen_size_pattern, query.lower()))
+    c_screen = set(re.findall(screen_size_pattern, candidate.lower()))
+
+    if q_screen and c_screen and q_screen != c_screen:
+        logger.debug(f"Screen size mismatch (disqualify): query={q_screen} vs candidate={c_screen}")
+        return 0.0
+    if q_screen and c_screen and q_screen == c_screen:
+        score += 8.0  # 같은 크기면 보너스
+
+    if q["model_codes"] and c["model_codes"]:
+        if q["model_codes"].isdisjoint(c["model_codes"]):
+            score -= 40.0
+        else:
+            score += 10.0
+    elif q["model_codes"] and not c["model_codes"]:
+        score -= 18.0
+
+    if q["unit_numbers"] and c["unit_numbers"]:
+        if q["unit_numbers"].isdisjoint(c["unit_numbers"]):
+            score -= 22.0
+        else:
+            score += 6.0
+
+    if q["big_numbers"]:
+        if q["big_numbers"].isdisjoint(c["big_numbers"]):
+            score -= 15.0
+        else:
+            score += 3.0
+
+    q_named: dict[str, set[str]] = q["named_numbers"]
+    c_named: dict[str, set[str]] = c["named_numbers"]
+    common_keys = set(q_named.keys()).intersection(c_named.keys())
+    mismatch = False
+    matched = False
+    for k in common_keys:
+        if q_named[k] and c_named[k]:
+            if q_named[k].isdisjoint(c_named[k]):
+                mismatch = True
+            else:
+                matched = True
+    if mismatch:
+        score -= 28.0
+    elif matched:
+        score += 8.0
+
+    if q["years"] and c["years"]:
+        if q["years"].isdisjoint(c["years"]):
+            score -= 6.0
+        else:
+            score += 2.0
+
+    if score < 0:
+        return 0.0
+    if score > 100:
+        return 100.0
+    return float(score)

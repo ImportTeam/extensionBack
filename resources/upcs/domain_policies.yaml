@@ -1,0 +1,32 @@
+version: 1
+# UPCS normalization policies by domain
+by_domain:
+  ELECTRONICS:
+    remove_colors: true
+    remove_units: true
+    remove_accessory_terms: true
+
+  FOOD:
+    remove_colors: false
+    remove_units: false
+    remove_accessory_terms: false
+
+  FASHION:
+    remove_colors: false
+    remove_units: false
+    remove_accessory_terms: false
+
+  BEAUTY:
+    remove_colors: false
+    remove_units: false
+    remove_accessory_terms: false
+
+  LIVING:
+    remove_colors: false
+    remove_units: false
+    remove_accessory_terms: false
+
+  DEFAULT:
+    remove_colors: false
+    remove_units: false
+    remove_accessory_terms: false

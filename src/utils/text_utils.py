@@ -7,7 +7,8 @@ The actual implementations live in `src/utils/text/*`.
 from __future__ import annotations
 
 from .text.cleaning import clean_product_name, split_kr_en_boundary
-from .text.matching import is_accessory_trap, normalize_search_query, weighted_match_score
+from .text.matching import is_accessory_trap, weighted_match_score
+from .text.normalization import normalize_search_query
 from .text.prices import extract_price_from_text
 from .text.signals import extract_model_codes, extract_product_signals
 from .text.similarity import calculate_similarity, fuzzy_score
