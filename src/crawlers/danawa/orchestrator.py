@@ -23,7 +23,14 @@ async def search_lowest_price(
     loop = asyncio.get_running_loop()
     started = loop.time()
     total_budget_ms = int(getattr(settings, "crawler_total_budget_ms", 4000))
-    http_budget_ms = int(min(getattr(settings, "crawler_http_timeout_ms", 1200), total_budget_ms))
+    # Playwright 폴백까지 고려해 HTTP에만 예산을 몰아주지 않도록 분배합니다.
+    # (FE 15초 타임아웃을 피하려면 전체 요청이 budget 내에 끝나야 함)
+    http_budget_ms = int(
+        min(
+            getattr(settings, "crawler_http_timeout_ms", 1200),
+            max(500, int(total_budget_ms * 0.65)),
+        )
+    )
 
     def _remaining_budget_s() -> float:
         elapsed_ms = int((loop.time() - started) * 1000)
@@ -85,17 +92,28 @@ async def search_lowest_price(
                 crawler._fastpath_on_fail()
                 crawler._metric_fastpath_miss()
 
-        # Playwright는 '안정성 폴백'이므로 총 예산을 hard-block 하지 않습니다(soft signal만 로그)
+        # Playwright는 예산 내에서만 수행(하드 캡). FE(15s)보다 먼저 응답해야 합니다.
         remaining_s = _remaining_budget_s()
         logger.info(
-            f"[PLAYWRIGHT] Phase 2 - Fallback to Playwright browser mode (soft_remaining_budget: {remaining_s:.2f}s)"
+            f"[PLAYWRIGHT] Phase 2 - Fallback to Playwright browser mode (remaining_budget: {remaining_s:.2f}s)"
         )
+
+        # 예산이 거의 없으면 Playwright를 시도하지 않고 빠르게 실패 처리
+        if remaining_s < 0.8:
+            raise asyncio.TimeoutError("crawl_budget_exhausted_before_playwright")
 
         # 1단계: 검색 페이지에서 상품 찾기 (이미 코드가 주어지면 스킵)
         if not product_code:
-            # Playwright 폴백: 독립적인 타임아웃 사용 (HTTP 사용 시간과 무관하게 새로 10초)
-            playwright_search_timeout = 10.0  # 10초: HTTP 실패 시 확실히 가져오는 게 중요
-            sem_timeout = playwright_search_timeout + 1.0
+            # Playwright 검색: 남은 예산 안에서만
+            # 검색+상세를 모두 해야 하므로, 검색에 너무 오래 쓰지 않게 상한을 둡니다.
+            remaining_s = _remaining_budget_s()
+            min_search_s = 1.0
+            min_detail_s = 1.2
+            if remaining_s < (min_search_s + min_detail_s + 0.2):
+                raise asyncio.TimeoutError("insufficient_budget_for_playwright_search_and_detail")
+
+            playwright_search_timeout = min(3.0, max(min_search_s, remaining_s * 0.45))
+            sem_timeout = min(remaining_s, playwright_search_timeout + 1.0)
             acquired = await crawler._acquire_browser_semaphore_with_timeout(sem_timeout)
             if not acquired:
                 raise ProductNotFoundException(f"Concurrency busy for: {product_name}")
@@ -117,9 +135,12 @@ async def search_lowest_price(
 
         # 2단계: 상품 상세 페이지에서 최저가 추출
         await crawler._rate_limit()
-        # Playwright 폴백: 독립적인 타임아웃 사용
-        playwright_detail_timeout = 8.0  # 8초: 충분한 시간 확보
-        sem_timeout = playwright_detail_timeout + 1.0
+        # Playwright 상세: 남은 예산 안에서만
+        remaining_s = _remaining_budget_s()
+        if remaining_s < 1.0:
+            raise asyncio.TimeoutError("insufficient_budget_for_playwright_detail")
+        playwright_detail_timeout = min(6.0, max(1.0, remaining_s - 0.2))
+        sem_timeout = min(remaining_s, playwright_detail_timeout + 1.0)
         acquired = await crawler._acquire_browser_semaphore_with_timeout(sem_timeout)
         if not acquired:
             raise CrawlerException(f"Playwright concurrency busy for: {product_name}")

@@ -1,4 +1,5 @@
 """API 엔드포인트 - 가격 검색 및 통계"""
+import asyncio
 from fastapi import APIRouter, BackgroundTasks, Depends
 from sqlalchemy.orm import Session
 
@@ -15,6 +16,7 @@ from src.services.cache_service import CacheService
 from src.repositories.search_log_repository import SearchLogRepository
 from src.core.logging import logger
 from src.utils.url_utils import extract_pcode_from_url
+from src.core.config import settings
 
 router = APIRouter(prefix="/api/v1", tags=["price"])
 
@@ -63,10 +65,14 @@ async def search_price(
     
     try:
         # 최저가 검색
-        result = await price_service.search_price(
-            product_name=request.product_name,
-            current_price=request.current_price,
-            product_code=product_code
+        # FE(브라우저) 타임아웃(15s)보다 짧게 하드 캡을 걸어 응답이 끊기는 문제를 방지
+        result = await asyncio.wait_for(
+            price_service.search_price(
+                product_name=request.product_name,
+                current_price=request.current_price,
+                product_code=product_code,
+            ),
+            timeout=float(getattr(settings, "api_price_search_timeout_s", 14.0)),
         )
         
         # 백그라운드로 로그 저장

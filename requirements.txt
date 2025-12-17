@@ -18,6 +18,9 @@ rapidfuzz>=3.0.0,<4.0.0
 # Korean tokenizer (optional but recommended for better matching)
 kiwipiepy>=0.17.0
 
+# Config parsing
+PyYAML>=6.0.1
+
 # Testing
 pytest==7.4.4
 pytest-asyncio==0.23.3

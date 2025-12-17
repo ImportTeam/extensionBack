@@ -21,6 +21,7 @@ dependencies = [
     "kiwipiepy>=0.17.0",
     "curl_cffi>=0.7.0",
     "selectolax>=0.3.0",
+    "PyYAML>=6.0.1",
 ]
 
 [project.optional-dependencies]

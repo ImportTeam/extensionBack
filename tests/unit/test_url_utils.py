@@ -26,6 +26,15 @@ class TestExtractPcodeFromUrl:
         """pcode가 중간에 있는 경우"""
         url = "https://prod.danawa.com/info/?keyword=test&pcode=55555&cate=123"
         assert extract_pcode_from_url(url) == "55555"
+
+    def test_extract_pcode_from_prod_id_bridge_url(self):
+        """검색 결과/외부몰 브릿지 링크(prod_id)에서도 코드 추출"""
+        url = (
+            "https://prod.danawa.com/bridge/go_link_goods.php?cate_c1=224"
+            "&cate_c2=49729&cate_c3=49740&cmpny_c=EE128&link_prod_c=4605258019"
+            "&prod_id=65920016&linkYN=Y&fee_type=T"
+        )
+        assert extract_pcode_from_url(url) == "65920016"
     
     def test_extract_pcode_invalid_url(self):
         """잘못된 URL"""
@@ -36,6 +45,11 @@ class TestExtractPcodeFromUrl:
     def test_extract_pcode_non_numeric(self):
         """pcode가 숫자가 아닌 경우"""
         url = "https://prod.danawa.com/info/?pcode=abc123"
+        assert extract_pcode_from_url(url) is None
+
+    def test_extract_pcode_non_numeric_prod_id(self):
+        """prod_id가 숫자가 아닌 경우"""
+        url = "https://prod.danawa.com/bridge/go_link_goods.php?prod_id=abc123"
         assert extract_pcode_from_url(url) is None
     
     def test_extract_pcode_missing_pcode(self):

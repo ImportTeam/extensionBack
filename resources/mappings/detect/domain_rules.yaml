@@ -3,7 +3,26 @@ version: 1
 # 원칙: 이 파일은 "도메인 판단"만 한다. (정규화 삭제/치환 로직 금지)
 
 rules:
-  - id: domain_rule_electronics_strong
+  # Electronics/IT (고신호성 브랜드/제품)
+  - id: domain_rule_electronics_brand
+    domain: domain.electronics
+    mode: score
+    signals:
+      any_contains:
+        - "애플"
+        - "apple"
+        - "삼성"
+        - "samsung"
+        - "lg"
+        - "나이키"
+        - "소니"
+        - "bose"
+        - "JBL"
+    threshold: 1
+    weights:
+      contains: 2
+
+  - id: domain_rule_electronics_product
     domain: domain.electronics
     mode: score
     signals:
@@ -15,36 +34,232 @@ rules:
         - "갤럭시"
         - "노트북"
         - "태블릿"
-        - "rtx"
-        - "ssd"
-        - "usb"
+        - "스마트폰"
+        - "이어폰"
+        - "헤드폰"
+        - "라우터"
+        - "데스크탑"
+        - "모니터"
       any_regex:
-        - "\\b\\d+\\s*(GB|TB|MHz|GHz|Hz)\\b"
-        - "(?i)\\bM\\s*\\d+\\b"
-    threshold: 2
+        - "(?i)\\b(rtx|gtx|radeon|nvidia|geforce)\\s*\\d+"
+        - "(?i)\\bM\\s*\\d+\\b"  # M1, M2, M3 etc
+    threshold: 1
     weights:
       contains: 1
       regex: 1
 
-  - id: domain_rule_food_strong
+  - id: domain_rule_electronics_specs
+    domain: domain.electronics
+    mode: score
+    signals:
+      any_regex:
+        - "\\b\\d+\\s*(GB|TB|MHz|GHz|Hz|kHz)\\b"
+        - "\\b(USB|Type-C|HDMI|DDR\\d+)\\b"
+        - "\\b(SSD|HDD|NVME|NVMe)\\b"
+    threshold: 2
+    weights:
+      regex: 1
+
+  # Food
+  - id: domain_rule_food_brand
     domain: domain.food
     mode: score
     signals:
       any_contains:
         - "라면"
         - "컵라면"
+        - "우동"
+        - "떡볶이"
         - "김치"
         - "된장"
         - "고추장"
         - "간장"
-        - "햇반"
-      any_regex:
-        - "\\b\\d+\\s*(g|kg|ml|l|개|팩|봉|캔|병)\\b"
-    threshold: 2
+        - "쌀"
+        - "밀가루"
+        - "우유"
+        - "버터"
+        - "요구르트"
+        - "치즈"
+        - "계란"
+        - "참치"
+        - "가자미"
+        - "새우"
+        - "삼겹살"
+        - "소세지"
+        - "베이컨"
+    threshold: 1
     weights:
-      contains: 1
+      contains: 2
+
+  - id: domain_rule_food_specs
+    domain: domain.food
+    mode: score
+    signals:
+      any_regex:
+        - "\\b\\d+\\s*(g|kg|ml|l|cc|개|팩|봉|캔|병|상자|묶음)\\b"
+        - "\\b(유기농|무염|저염|무가당)\\b"
+    threshold: 1
+    weights:
       regex: 1
 
+  # Fashion
+  - id: domain_rule_fashion_brand
+    domain: domain.fashion
+    mode: score
+    signals:
+      any_contains:
+        - "나이키"
+        - "아디다스"
+        - "푸마"
+        - "뉴발란스"
+        - "컨버스"
+        - "반스"
+        - "팀버랜드"
+        - "루이뷔똥"
+        - "구찌"
+        - "프라다"
+        - "버버리"
+        - "기모"
+        - "목폴라"
+    threshold: 1
+    weights:
+      contains: 2
+
+  - id: domain_rule_fashion_type
+    domain: domain.fashion
+    mode: score
+    signals:
+      any_contains:
+        - "원피스"
+        - "셔츠"
+        - "블라우스"
+        - "청바지"
+        - "팬츠"
+        - "스커트"
+        - "코트"
+        - "재킷"
+        - "스웨터"
+        - "니트"
+        - "후드"
+        - "신발"
+        - "운동화"
+        - "구두"
+        - "부츠"
+        - "샌들"
+        - "슬리퍼"
+        - "가방"
+        - "지갑"
+        - "벨트"
+        - "스카프"
+    threshold: 1
+    weights:
+      contains: 1
+
+  # Beauty
+  - id: domain_rule_beauty_type
+    domain: domain.beauty
+    mode: score
+    signals:
+      any_contains:
+        - "토너"
+        - "에센스"
+        - "에센셜"
+        - "로션"
+        - "크림"
+        - "마스크팩"
+        - "팩"
+        - "립스틱"
+        - "글로스"
+        - "아이섀도"
+        - "파운데이션"
+        - "쿠션"
+        - "BB크림"
+        - "CC크림"
+        - "향수"
+        - "오드뜨왈렛"
+        - "핸드크림"
+        - "바디로션"
+    threshold: 1
+    weights:
+      contains: 2
+
+  # Living/생활용품
+  - id: domain_rule_living_type
+    domain: domain.living
+    mode: score
+    signals:
+      any_contains:
+        - "세제"
+        - "세탁"
+        - "샴푸"
+        - "린스"
+        - "바디"
+        - "치약"
+        - "칫솔"
+        - "냅킨"
+        - "휴지"
+        - "물티슈"
+        - "빨래"
+        - "거울"
+        - "청소"
+        - "브러시"
+        - "수건"
+        - "베개"
+        - "침구"
+    threshold: 1
+    weights:
+      contains: 1
+
+  # Pet
+  - id: domain_rule_pet_type
+    domain: domain.pet
+    mode: score
+    signals:
+      any_contains:
+        - "사료"
+        - "간식"
+        - "캔"
+        - "봉지"
+        - "스낵"
+        - "장난감"
+        - "집"
+        - "침대"
+        - "목줄"
+        - "목걸이"
+        - "애완"
+        - "반려견"
+        - "반려묘"
+        - "강아지"
+        - "고양이"
+        - "기저귀"
+    threshold: 1
+    weights:
+      contains: 1
+
+  # Kids
+  - id: domain_rule_kids_type
+    domain: domain.kids
+    mode: score
+    signals:
+      any_contains:
+        - "기저귀"
+        - "분유"
+        - "젖병"
+        - "유모차"
+        - "카시트"
+        - "완구"
+        - "장난감"
+        - "그림책"
+        - "치발기"
+        - "물놀이"
+        - "어린이"
+        - "유아"
+        - "아기"
+    threshold: 1
+    weights:
+      contains: 1
+
+  # Default fallback
   - id: domain_rule_default
     domain: domain.general
     mode: default

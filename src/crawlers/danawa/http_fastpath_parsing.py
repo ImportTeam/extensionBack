@@ -126,8 +126,19 @@ def has_product_fingerprint(html: str) -> bool:
 def extract_pcode_from_href(href: str) -> Optional[str]:
     if not href:
         return None
-    m = re.search(r"pcode=(\d+)", href)
-    return m.group(1) if m else None
+    # 다나와 검색결과는 여러 형태의 링크를 사용합니다.
+    # - https://prod.danawa.com/info/?pcode=123
+    # - https://prod.danawa.com/bridge/go_link_goods.php?...&prod_id=123
+    for pat in (r"[?&]pcode=(\d+)", r"[?&]prod_id=(\d+)"):
+        m = re.search(pat, href)
+        if m:
+            return m.group(1)
+    # Fallback: query param 경계가 없는 경우까지 커버
+    for pat in (r"pcode=(\d+)", r"prod_id=(\d+)"):
+        m = re.search(pat, href)
+        if m:
+            return m.group(1)
+    return None
 
 
 def parse_search_pcandidates(html: str, query: str, max_candidates: int = 12) -> List[str]:
@@ -138,15 +149,6 @@ def parse_search_pcandidates(html: str, query: str, max_candidates: int = 12) ->
     if not links:
         links = parser.css('a[href*="pcode="]')
 
-    # 액세서리 필터용 키워드 (대소문자 무관)
-    accessory_keywords = {
-        "케이스", "필름", "파우치", "키스킨", "충전기", "거치대",
-        "스탠드", "가방", "커버", "보호필름", "강화유리", "어댑터",
-        "케이블", "허브", "젠더", "독", "도킹", "스티커", "키캡",
-        "글래스", "glass", "펜슬", "pencil", "펜", "pen", "키보드", "keyboard",
-        "마우스", "mouse", "트랙패드", "trackpad", "실리콘", "silicon"
-    }
-
     scored: List[tuple[float, str]] = []
     for node in links[: max_candidates * 3]:
         href = node.attributes.get("href") or ""
@@ -154,16 +156,9 @@ def parse_search_pcandidates(html: str, query: str, max_candidates: int = 12) ->
         if not pcode:
             continue
         text = (node.text() or "").strip()
-        text_lower = text.lower()
-        
-        # 액세서리 키워드가 있으면 스킵 (본체가 아님)
-        found_accessory = [kw for kw in accessory_keywords if kw in text_lower]
-        if found_accessory:
-            continue
         
         score = weighted_match_score(query, text)
-        if score > 0:
-            scored.append((score, pcode))
+        scored.append((score, pcode))
 
     scored.sort(key=lambda t: t[0], reverse=True)
     return [p for _, p in scored[:max_candidates]]

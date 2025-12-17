@@ -60,10 +60,12 @@ class DanawaSearchHelper:
         2. 브랜드 + 모델 (핵심만)
         3. 모델명만
         4. 브랜드만
+        5. 대체 검색어 (예: "맥북" → "MacBook", "Apple laptop" 등)
         """
         from src.utils.text_utils import clean_product_name, normalize_search_query
         
         candidates = []
+        product_lower = (product_name or "").lower()
         
         # 1. 정규화된 전체 (이미 충분히 정제됨)
         normalized = normalize_search_query(product_name)
@@ -86,6 +88,20 @@ class DanawaSearchHelper:
         # 4. 브랜드만
         if brand:
             candidates.append(brand)
+        
+        # 5. 대체 검색어 (특정 키워드 최소 변형)
+        # NOTE: 이 로직은 '검색 후보 생성'에 한정합니다(정규화 SRP와 분리).
+        substitutions: dict[str, list[str]] = {
+            "맥북": ["MacBook", "MacBook Air", "Mac"],
+            "아이폰": ["iPhone"],
+            "아이패드": ["iPad"],
+            "에어팟": ["AirPods"],
+            "애플워치": ["Apple Watch"],
+            "갤럭시": ["Galaxy"],
+        }
+        for kr_term, en_terms in substitutions.items():
+            if kr_term in product_name or kr_term.lower() in product_lower:
+                candidates.extend(en_terms)
         
         # 중복 제거 (순서 유지)
         deduped = []

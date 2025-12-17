@@ -108,9 +108,29 @@ class DanawaHttpFastPath:
         search_deadline = loop.time() + (search_budget_ms / 1000.0)
 
         max_candidates = 2
+        max_pcodes_per_candidate = 4
+
+        def _is_likely_accessory(product_name: str) -> bool:
+            """상품명으로 명백한 액세서리(필름/케이스 등) 오탐을 완화.
+
+            NOTE: Fast Path는 상세페이지 가격 검증이 1차 방어이고,
+            여기서는 '브랜드/라벨' 기반으로 강한 액세서리 신호만 얕게 필터링합니다.
+            """
+            name_lower = (product_name or "").lower()
+            accessory_brand_hints = (
+                # 보호필름/액세서리에서 자주 등장하는 브랜드/라벨(최소한만 유지)
+                "힐링쉴드",
+                "폰트리",
+                "슈피겐",
+                "신지모루",
+                "스코코",
+                "좀비베리어",
+            )
+            return any(h.lower() in name_lower for h in accessory_brand_hints)
 
         # Note: Probing removed to save time. We'll fail fast on actual fetch if host is down.
         chosen_pcode: Optional[str] = None
+        chosen_result: Optional[dict] = None
         # 개별 요청마다 고정 타임아웃 적용 (phase budget과 분리)
         per_try_ms = int(getattr(settings, "crawler_http_request_timeout_ms", getattr(settings, "crawler_http_timeout_ms", 4000)))
         
@@ -137,47 +157,69 @@ class DanawaHttpFastPath:
                 continue
 
             pcodes = parse_search_pcandidates(html, query=query, max_candidates=12)
-            if pcodes:
-                chosen_pcode = pcodes[0]
-                logger.info(f"[FAST_PATH] ✅ SUCCESS - Found pcode={chosen_pcode} from candidate {idx+1} (will skip remaining candidates)")
+            if not pcodes:
+                continue
+
+            # 상위 pcode 여러 개를 실제 상품 상세로 검증해 액세서리/오탐을 회피
+            for pcode_rank, pcode in enumerate(pcodes[:max_pcodes_per_candidate], start=1):
+                remaining_total_ms = int(max(0.0, (deadline - loop.time()) * 1000.0))
+                if remaining_total_ms <= 0:
+                    logger.info("[FAST_PATH] Total budget exhausted before product fetch")
+                    break
+
+                # Product page fetch: 상품 상세는 더 느릴 수 있어 별도 타임아웃을 둡니다.
+                configured_product_timeout_ms = int(getattr(settings, "crawler_http_product_timeout_ms", 6000))
+                product_timeout_ms = int(max(300, min(configured_product_timeout_ms, remaining_total_ms)))
+
+                product_url = f"{self.product_url}?pcode={pcode}&keyword={quote(query)}"
+                product_html = await self._fetch_html(product_url, timeout_ms=product_timeout_ms)
+                if not product_html:
+                    continue
+
+                try:
+                    if not has_product_fingerprint(product_html):
+                        logger.info(f"[FAST_PATH] No product fingerprint found for pcode={pcode}")
+                        continue
+                except Exception:
+                    continue
+
+                parsed = parse_product_lowest_price(product_html, fallback_name=query, product_url=product_url)
+                if not parsed:
+                    continue
+
+                # 상품명 기반 액세서리 필터링 (상품명에 명백한 액세서리 키워드가 있으면 스킵)
+                if _is_likely_accessory(parsed.product_name):
+                    logger.info(
+                        f"[FAST_PATH] Skipping likely accessory based on product name: "
+                        f"(pcode={pcode}, name='{parsed.product_name[:50]}...')"
+                    )
+                    continue
+
+                from datetime import datetime
+
+                chosen_pcode = pcode
+                chosen_result = {
+                    "product_name": parsed.product_name,
+                    "lowest_price": parsed.lowest_price,
+                    "link": parsed.link,
+                    "source": "danawa",
+                    "mall": parsed.mall,
+                    "free_shipping": parsed.free_shipping,
+                    "top_prices": parsed.top_prices,
+                    "price_trend": parsed.price_trend,
+                    "updated_at": datetime.now().isoformat(),
+                    "_path": "http_fastpath",
+                }
+                logger.info(
+                    f"[FAST_PATH] ✅ SUCCESS - Selected pcode={chosen_pcode} (candidate={idx+1}, pcode_rank={pcode_rank})"
+                )
+                break
+
+            if chosen_result:
                 break  # 성공하면 더 이상 시도 안 함
 
-        if not chosen_pcode:
+        if not chosen_pcode or not chosen_result:
             logger.info("[FAST_PATH] No pcode found from any candidate")
             return None
 
-        # Product page fetch: 상품 상세는 더 느릴 수 있어 별도 타임아웃을 둡니다.
-        product_timeout_ms = int(getattr(settings, "crawler_http_product_timeout_ms", 6000))
-        
-        product_url = f"{self.product_url}?pcode={chosen_pcode}&keyword={quote(query)}"
-        html = await self._fetch_html(product_url, timeout_ms=product_timeout_ms)
-        if not html:
-            logger.info(f"[FAST_PATH] Product page fetch failed for pcode={chosen_pcode}")
-            raise FastPathProductFetchFailed(chosen_pcode, "fetch_failed")
-
-        try:
-            if not has_product_fingerprint(html):
-                logger.info(f"[FAST_PATH] No product fingerprint found for pcode={chosen_pcode}")
-                raise FastPathProductFetchFailed(chosen_pcode, "no_product_fingerprint")
-        except Exception:
-            raise FastPathProductFetchFailed(chosen_pcode, "fingerprint_exception")
-
-        parsed = parse_product_lowest_price(html, fallback_name=query, product_url=product_url)
-        if not parsed:
-            logger.info(f"[FAST_PATH] Parsing failed for pcode={chosen_pcode}")
-            raise FastPathProductFetchFailed(chosen_pcode, "parse_failed")
-
-        from datetime import datetime
-
-        return {
-            "product_name": parsed.product_name,
-            "lowest_price": parsed.lowest_price,
-            "link": parsed.link,
-            "source": "danawa",
-            "mall": parsed.mall,
-            "free_shipping": parsed.free_shipping,
-            "top_prices": parsed.top_prices,
-            "price_trend": parsed.price_trend,
-            "updated_at": datetime.now().isoformat(),
-            "_path": "http_fastpath",
-        }
+        return chosen_result

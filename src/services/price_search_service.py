@@ -1,4 +1,5 @@
 """가격 검색 서비스 - 비즈니스 로직 오케스트레이션"""
+import asyncio
 from typing import Optional, Dict, Any
 from sqlalchemy.orm import Session
 
@@ -137,6 +138,17 @@ class PriceSearchService:
                 message="다나와에서 새로 검색했습니다."
             )
         
+        except asyncio.TimeoutError:
+            msg = "요청 시간 초과"
+            logger.warning(f"Search timeout for: {product_name}")
+            self.cache_service.set_negative(search_key, msg)
+            self._record_search_failure(
+                product_name=product_name,
+                normalized_name=normalized_name,
+                error_message=msg,
+            )
+            return self._build_error_response(msg)
+
         except ProductNotFoundException as e:
             logger.warning(f"Product not found: {e}")
             msg = str(e)

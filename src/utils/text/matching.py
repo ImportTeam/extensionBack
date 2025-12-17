@@ -204,6 +204,26 @@ def normalize_search_query(text: str) -> str:
     if not text:
         return ""
 
+    # 0) 설정 기반(resources/) 정규화 우선 시도
+    # - 도메인/태그 기반 정책으로 '블랙' 같은 토큰을 상황에 맞게 보존/제거
+    # - 실패 시(의존성/설정 오류 등) 기존 휴리스틱으로 폴백
+    try:
+        from .normalization_resources import normalize_search_query_with_resources
+
+        normalized = normalize_search_query_with_resources(text, vendor="danawa")
+        if normalized:
+            return normalized
+    except Exception as e:
+        logger.debug(f"resource-based normalization fallback: {type(e).__name__}: {e}")
+
+    return _normalize_search_query_legacy(text)
+
+
+def _normalize_search_query_legacy(text: str) -> str:
+    """레거시 휴리스틱 정규화(설정 로딩 실패 시 폴백)."""
+    if not text:
+        return ""
+
     def is_likely_it_query(value: str) -> bool:
         """휴리스틱으로 IT/전자제품 쿼리인지 판단.
 

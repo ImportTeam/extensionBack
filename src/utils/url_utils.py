@@ -30,14 +30,16 @@ def extract_pcode_from_url(url: str) -> Optional[str]:
         parsed = urlparse(url)
         query_params = parse_qs(parsed.query)
         
-        if 'pcode' in query_params:
-            pcode = query_params['pcode'][0]
-            # 숫자만 포함되어 있는지 확인
-            if pcode.isdigit():
-                return pcode
+        # 다나와 URL은 pcode 또는 prod_id 형태가 모두 존재합니다.
+        # (예: 검색결과/외부몰 브릿지 링크는 prod_id를 사용)
+        for key in ("pcode", "prod_id"):
+            if key in query_params:
+                value = query_params[key][0]
+                if value.isdigit():
+                    return value
         
-        # Fallback: 정규식으로 pcode= 패턴 찾기
-        match = re.search(r'pcode=(\d+)', url)
+        # Fallback: 정규식으로 pcode/prod_id 패턴 찾기
+        match = re.search(r'(?:pcode|prod_id)=(\d+)', url)
         if match:
             return match.group(1)
         

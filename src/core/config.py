@@ -56,6 +56,10 @@ class Settings(BaseSettings):
     api_title: str = "최저가 탐지 서비스"
     api_version: str = "1.0.0"
     api_description: str = "Cache-First 전략으로 최저가를 빠르게 검색합니다."
+
+    # FE(브라우저) 타임아웃보다 짧게 서버에서 하드 캡을 걸어
+    # 요청이 매달린 채로 클라이언트에서 타임아웃되는 상황을 줄입니다.
+    api_price_search_timeout_s: float = 14.0
     
     # 로깅
     log_level: str = "INFO"
