@@ -6,7 +6,7 @@ from contextlib import asynccontextmanager
 from src.core.config import settings
 from src.core.database import init_db
 from src.core.logging import logger
-from src.api import health_routes, price_routes
+from src.api import health_router, price_router
 from src.routes import analytics_router
 
 
@@ -63,9 +63,9 @@ def create_app() -> FastAPI:
     )
     
     # 라우터 등록
-    app.include_router(health_routes.router)
-    app.include_router(price_routes.router)
-    app.include_router(analytics_router.router)
+    app.include_router(health_router)
+    app.include_router(price_router)
+    app.include_router(analytics_router)
     
     return app
 

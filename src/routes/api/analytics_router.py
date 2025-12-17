@@ -4,8 +4,8 @@ from fastapi import APIRouter, Depends, HTTPException
 from sqlalchemy.orm import Session
 
 from src.core.database import get_db
-from src.services.search_failure_analyzer import SearchFailureAnalyzer
-from src.repositories.search_failure_repository import SearchFailureRepository
+from src.services.impl.search_failure_analyzer import SearchFailureAnalyzer
+from src.repositories.impl.search_failure_repository import SearchFailureRepository
 from src.core.logging import logger
 
 router = APIRouter(prefix="/api/analytics", tags=["analytics"])

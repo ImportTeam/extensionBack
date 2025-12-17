@@ -4,7 +4,7 @@ NOTE: 파일이 커지는 문제를 줄이기 위해 아래 모듈로 분리되�
 - src/crawlers/danawa/metrics/ : Circuit Breaker + Metrics
 - src/crawlers/danawa/boundary/ : HTTP Fast Path + Timeout Manager
 - src/crawlers/danawa/playwright/ : Playwright 관리
-- src/crawlers/danawa/orchestrator.py : 오케스트레이션 로직
+- src/crawlers/danawa/core/orchestrator.py : 오케스트레이션 로직
 """
 
 from __future__ import annotations
@@ -148,4 +148,3 @@ class DanawaCrawler:
                 "playwright_success_rate": cb.metrics.playwright_success_rate,
             },
         }
-

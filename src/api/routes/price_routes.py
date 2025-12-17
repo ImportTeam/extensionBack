@@ -11,9 +11,9 @@ from src.schemas.price_schema import (
     StatisticsResponse,
     PopularQuery
 )
-from src.services.price_search_service import PriceSearchService
-from src.services.cache_service import CacheService
-from src.repositories.search_log_repository import SearchLogRepository
+from src.services.impl.price_search_service import PriceSearchService
+from src.services.impl.cache_service import CacheService
+from src.repositories.impl.search_log_repository import SearchLogRepository
 from src.core.logging import logger
 from src.utils.url_utils import extract_pcode_from_url
 from src.core.config import settings

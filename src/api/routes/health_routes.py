@@ -3,8 +3,8 @@ from fastapi import APIRouter, Depends
 from datetime import datetime
 
 from src.schemas.price_schema import HealthResponse
-from src.services.cache_service import CacheService
-from src.api.price_routes import get_cache_service
+from src.services.impl.cache_service import CacheService
+from src.api.routes.price_routes import get_cache_service
 from src.core.database import engine
 from src import __version__
 

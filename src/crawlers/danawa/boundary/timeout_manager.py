@@ -100,13 +100,13 @@ class TimeoutManager:
         """Playwright 상세 조회에 최소 필요한 시간이 남아있는가?"""
         return self.remaining_ms >= min_required_ms
 
-    def get_playwright_search_timeout(self, max_timeout_s: float = 3.0) -> float:
+    def get_playwright_search_timeout(self, max_timeout_s: float = 5.0) -> float:
         """Playwright 검색에 사용할 타임아웃 (초).
 
         - 최대 max_timeout_s
-        - 남은 예산 * 45% (공정한 배분)
+        - 남은 예산 * 65% (검색 단계가 느릴 때가 많아 조금 더 배정)
         """
-        allocated = max(1.0, self.remaining_s * 0.45)
+        allocated = max(1.5, self.remaining_s * 0.65)
         return min(max_timeout_s, allocated)
 
     def get_playwright_detail_timeout(self, max_timeout_s: float = 6.0) -> float:

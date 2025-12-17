@@ -1,7 +1,7 @@
 """캐시 서비스 유닛 테스트 (Mock 사용)"""
 import pytest
 from unittest.mock import Mock, patch, MagicMock
-from src.services.cache_service import CacheService
+from src.services import CacheService
 from src.schemas.price_schema import CachedPrice
 from src.core.exceptions import CacheException
 
@@ -9,7 +9,7 @@ from src.core.exceptions import CacheException
 class TestCacheService:
     """캐시 서비스 테스트"""
     
-    @patch('src.services.cache_service.Redis')
+    @patch('src.services.impl.cache_service.Redis')
     def test_init_success(self, mock_redis):
         """Redis 연결 성공"""
         mock_redis.from_url.return_value.ping.return_value = True
@@ -18,7 +18,7 @@ class TestCacheService:
         assert service.redis_client is not None
         mock_redis.from_url.return_value.ping.assert_called_once()
     
-    @patch('src.services.cache_service.Redis')
+    @patch('src.services.impl.cache_service.Redis')
     def test_init_failure(self, mock_redis):
         """Redis 연결 실패"""
         mock_redis.from_url.return_value.ping.side_effect = Exception("Connection failed")
@@ -26,7 +26,7 @@ class TestCacheService:
         with pytest.raises(CacheException):
             CacheService()
     
-    @patch('src.services.cache_service.Redis')
+    @patch('src.services.impl.cache_service.Redis')
     def test_get_cache_hit(self, mock_redis):
         """캐시 히트"""
         mock_client = MagicMock()
@@ -41,7 +41,7 @@ class TestCacheService:
         assert isinstance(result, CachedPrice)
         assert result.lowest_price == 100000
     
-    @patch('src.services.cache_service.Redis')
+    @patch('src.services.impl.cache_service.Redis')
     def test_get_cache_miss(self, mock_redis):
         """캐시 미스"""
         mock_client = MagicMock()
@@ -54,7 +54,7 @@ class TestCacheService:
         
         assert result is None
     
-    @patch('src.services.cache_service.Redis')
+    @patch('src.services.impl.cache_service.Redis')
     def test_set_cache(self, mock_redis):
         """캐시 저장"""
         mock_client = MagicMock()
@@ -83,7 +83,7 @@ class TestCacheService:
         assert result is True
         mock_client.setex.assert_called_once()
     
-    @patch('src.services.cache_service.Redis')
+    @patch('src.services.impl.cache_service.Redis')
     def test_delete_cache(self, mock_redis):
         """캐시 삭제"""
         mock_client = MagicMock()
@@ -97,7 +97,7 @@ class TestCacheService:
         assert result is True
         mock_client.delete.assert_called_once()
     
-    @patch('src.services.cache_service.Redis')
+    @patch('src.services.impl.cache_service.Redis')
     def test_health_check(self, mock_redis):
         """헬스 체크"""
         mock_client = MagicMock()
@@ -107,7 +107,7 @@ class TestCacheService:
         service = CacheService()
         assert service.health_check() is True
 
-    @patch('src.services.cache_service.Redis')
+    @patch('src.services.impl.cache_service.Redis')
     def test_negative_cache(self, mock_redis):
         """부정 캐시(get_negative/set_negative)"""
         mock_client = MagicMock()

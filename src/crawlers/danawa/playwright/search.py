@@ -16,6 +16,8 @@ async def search_product(
     create_page: Callable[[], Awaitable[Page]],
     search_url_base: str,
     search_query: str,
+    *,
+    overall_timeout_s: Optional[float] = None,
 ) -> Optional[str]:
     """
     검색 페이지에서 상품 코드 추출 (계층적 폴백 검색)
@@ -44,10 +46,20 @@ async def search_product(
         for idx, cand in enumerate(candidates):
             logger.debug(f"Trying search (attempt {idx+1}): {cand}")
             search_url = f"{search_url_base}?query={quote(cand)}&originalQuery={quote(cand)}"
-            await page.goto(search_url, wait_until='domcontentloaded')
+
+            # orchestrator에서 전체 예산으로 asyncio.wait_for를 걸기 때문에,
+            # 여기서는 Playwright 레벨 timeout도 그 범위 안으로 맞춰
+            # 취소(cancellation)로 인한 noisy error(net::ERR_ABORTED 등)를 줄입니다.
+            if overall_timeout_s is not None:
+                goto_timeout_ms = max(800, int(overall_timeout_s * 1000 * 0.75))
+                await page.goto(search_url, wait_until='domcontentloaded', timeout=goto_timeout_ms)
+                selector_timeout_ms = max(800, int(overall_timeout_s * 1000 * 0.85))
+            else:
+                await page.goto(search_url, wait_until='domcontentloaded')
+                selector_timeout_ms = 3000 if idx > 0 else 5000
 
             try:
-                await page.wait_for_selector('.prod_item, a[href*="pcode="]', timeout=3000 if idx > 0 else 5000)
+                await page.wait_for_selector('.prod_item, a[href*="pcode="]', timeout=selector_timeout_ms)
                 found = True
                 break
             except PlaywrightTimeoutError:
@@ -97,4 +109,7 @@ async def search_product(
         return None
 
     finally:
-        await page.close()
+        try:
+            await page.close()
+        except Exception:
+            pass

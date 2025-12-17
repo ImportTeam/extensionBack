@@ -2,7 +2,7 @@
 from typing import Dict, List, Optional
 from datetime import datetime, timedelta
 from sqlalchemy.orm import Session
-from src.repositories.search_failure_repository import SearchFailureRepository
+from src.repositories.impl.search_failure_repository import SearchFailureRepository
 from src.core.logging import logger
 
 

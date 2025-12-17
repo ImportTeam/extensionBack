@@ -3,11 +3,11 @@ import asyncio
 from typing import Optional, Dict, Any
 from sqlalchemy.orm import Session
 
-from src.services.cache_service import CacheService
+from src.services.impl.cache_service import CacheService
 from src.crawlers.danawa import DanawaCrawler
-from src.repositories.search_log_repository import SearchLogRepository
-from src.repositories.search_failure_repository import SearchFailureRepository
-from src.repositories.price_cache_repository import PriceCacheRepository
+from src.repositories.impl.search_log_repository import SearchLogRepository
+from src.repositories.impl.search_failure_repository import SearchFailureRepository
+from src.repositories.impl.price_cache_repository import PriceCacheRepository
 from src.utils.search_optimizer import DanawaSearchHelper
 from src.core.logging import logger
 from src.core.exceptions import ProductNotFoundException, CrawlerException

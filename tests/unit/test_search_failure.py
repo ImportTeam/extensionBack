@@ -2,8 +2,8 @@
 import pytest
 from datetime import datetime
 from sqlalchemy.orm import Session
-from src.repositories.search_failure_repository import SearchFailureRepository
-from src.services.search_failure_analyzer import SearchFailureAnalyzer
+from src.repositories import SearchFailureRepository
+from src.services import SearchFailureAnalyzer
 from src.core.database import get_db
 
 

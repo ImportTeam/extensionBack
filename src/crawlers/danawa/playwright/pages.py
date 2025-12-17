@@ -16,7 +16,10 @@ async def configure_page(page: Page) -> Page:
     async def _route_handler(route, request):
         try:
             if request.resource_type in {"image", "media", "font", "stylesheet"}:
-                await route.abort()
+                try:
+                    await route.abort()
+                except Exception:
+                    return
                 return
             url = (request.url or "").lower()
             if any(
@@ -34,11 +37,18 @@ async def configure_page(page: Page) -> Page:
                     ".css",
                 )
             ):
-                await route.abort()
+                try:
+                    await route.abort()
+                except Exception:
+                    return
                 return
         except Exception:
-            pass
-        await route.continue_()
+            return
+
+        try:
+            await route.continue_()
+        except Exception:
+            return
 
     try:
         await page.route("**/*", _route_handler)

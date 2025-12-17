@@ -118,7 +118,12 @@ async def search_lowest_price(
             try:
                 logger.debug(f"[PLAYWRIGHT] Phase 2-A - Launching browser search (timeout: {playwright_search_timeout:.1f}s)")
                 product_code = await asyncio.wait_for(
-                    search_product(crawler._create_page, crawler.search_url, product_name),
+                    search_product(
+                        crawler._create_page,
+                        crawler.search_url,
+                        product_name,
+                        overall_timeout_s=playwright_search_timeout,
+                    ),
                     timeout=playwright_search_timeout,
                 )
                 logger.info(f"[PLAYWRIGHT] Phase 2-A ✅ Found product pcode: {product_code}")
@@ -193,4 +198,7 @@ async def search_lowest_price(
         raise CrawlerException(f"Crawling failed: {e}")
     finally:
         if page:
-            await page.close()
+            try:
+                await page.close()
+            except Exception:
+                pass

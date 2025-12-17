@@ -5,7 +5,7 @@ from unittest.mock import patch, AsyncMock, MagicMock
 
 # App factory 사용
 from src.app import create_app
-from src.api.price_routes import get_price_service
+from src.api import get_price_service
 
 app = create_app()
 
@@ -16,8 +16,8 @@ class TestHealthAPI:
     
     async def test_health_check(self) -> None:
         """헬스 체크 엔드포인트"""
-        with patch('src.api.health_routes.get_cache_service') as mock_cache, \
-             patch('src.api.health_routes.engine') as mock_engine:
+        with patch('src.api.routes.health_routes.get_cache_service') as mock_cache, \
+             patch('src.api.routes.health_routes.engine') as mock_engine:
             
             # Mock 설정
             mock_cache_service = MagicMock()
@@ -115,7 +115,7 @@ class TestPriceSearchAPI:
     
     async def test_search_price_not_found(self) -> None:
         """상품을 찾을 수 없는 경우"""
-        with patch('src.api.price_routes.get_price_service') as mock_service:
+        with patch('src.api.routes.price_routes.get_price_service') as mock_service:
             mock_price_service = AsyncMock()
             mock_price_service.search_price.return_value = {
                 "lowest_price": 0,
@@ -158,7 +158,7 @@ class TestStatisticsAPI:
     
     async def test_get_statistics(self) -> None:
         """통계 조회"""
-        with patch('src.api.price_routes.SearchLogRepository') as mock_repo:
+        with patch('src.api.routes.price_routes.SearchLogRepository') as mock_repo:
             # Mock 리포지토리 설정
             mock_repo_instance = MagicMock()
             mock_repo_instance.get_total_count.return_value = 100

@@ -15,8 +15,7 @@ FE가 보내는 정보:
 """
 import os
 import pytest
-from src.services.cache_service import CacheService
-from src.services.price_search_service import PriceSearchService
+from src.services import CacheService, PriceSearchService
 from src.utils.text import clean_product_name
 
 pytestmark = pytest.mark.asyncio
