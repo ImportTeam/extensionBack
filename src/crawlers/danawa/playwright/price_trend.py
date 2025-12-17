@@ -23,7 +23,7 @@ async def extract_price_trend(page: Page) -> list[Dict]:
     """
     try:
         # 네트워크 요청 감시 (AJAX로 차트 데이터를 가져오는 경우)
-        price_trend_data = []
+        price_trend_data: list[dict[str, any]] = []
 
         async def handle_response(response):
             try:

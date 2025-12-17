@@ -16,7 +16,7 @@ def _get_kiwi():
         return _KIWI_INSTANCE
 
     try:
-        from kiwipiepy import Kiwi  # type: ignore
+        from kiwipiepy import Kiwi
 
         _KIWI_INSTANCE = Kiwi()
         return _KIWI_INSTANCE

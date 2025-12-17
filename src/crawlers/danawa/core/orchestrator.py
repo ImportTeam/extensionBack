@@ -50,7 +50,7 @@ async def search_lowest_price(
                         f"[HTTP-FASTPATH] Phase 1 - Attempting curl-based HTTP search "
                         f"(timeout: {timeout_mgr.budget.http_budget_ms}ms)"
                     )
-                    from src.utils.search_optimizer import DanawaSearchHelper
+                    from src.utils.search import DanawaSearchHelper
 
                     helper = DanawaSearchHelper()
                     candidates = helper.generate_search_candidates(product_name)

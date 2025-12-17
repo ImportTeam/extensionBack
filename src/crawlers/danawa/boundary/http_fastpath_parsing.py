@@ -13,7 +13,7 @@ from selectolax.parser import HTMLParser
 
 from src.core.config import settings
 from src.utils.text import extract_price_from_text, weighted_match_score
-from src.utils.url_utils import normalize_href
+from src.utils.url import normalize_href
 
 
 _BLOCK_KEYWORDS = (

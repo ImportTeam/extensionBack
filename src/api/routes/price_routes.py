@@ -15,7 +15,7 @@ from src.services.impl.price_search_service import PriceSearchService
 from src.services.impl.cache_service import CacheService
 from src.repositories.impl.search_log_repository import SearchLogRepository
 from src.core.logging import logger
-from src.utils.url_utils import extract_pcode_from_url
+from src.utils.url import extract_pcode_from_url
 from src.core.config import settings
 
 router = APIRouter(prefix="/api/v1", tags=["price"])

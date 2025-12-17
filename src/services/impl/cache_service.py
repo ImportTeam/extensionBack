@@ -7,7 +7,7 @@ from src.core.config import settings
 from src.core.logging import logger
 from src.core.exceptions import CacheException
 from src.schemas.price_schema import CachedPrice
-from src.utils.hash_utils import generate_cache_key, generate_negative_cache_key
+from src.utils.hash import generate_cache_key, generate_negative_cache_key
 
 
 class CacheService:

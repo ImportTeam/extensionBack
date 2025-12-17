@@ -30,7 +30,7 @@ def fuzzy_score(query: str, candidate: str) -> float:
         return 0.0
 
     try:
-        from rapidfuzz import fuzz, utils  # type: ignore
+        from rapidfuzz import fuzz, utils
 
         return float(fuzz.WRatio(query, candidate, processor=utils.default_process))
     except Exception:

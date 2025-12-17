@@ -1,4 +1,5 @@
 version: 1
+terms: {}
 # 태그별 정책: 도메인 정책을 보강/예외 처리
 # 예: attr.color.black은 food 도메인에서는 보존, electronics에서는 제거(기본)
 

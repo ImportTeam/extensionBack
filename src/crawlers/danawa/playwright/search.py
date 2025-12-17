@@ -30,7 +30,7 @@ async def search_product(
     Returns:
         상품 코드(pcode) 또는 None
     """
-    from src.utils.search_optimizer import DanawaSearchHelper
+    from src.utils.search import DanawaSearchHelper
 
     page = await create_page()
 

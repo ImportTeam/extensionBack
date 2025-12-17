@@ -1,7 +1,6 @@
 """URL 파싱 유틸 테스트"""
 import pytest
-from src.utils.url_utils import extract_pcode_from_url
-from src.utils.url_utils import normalize_href
+from src.utils.url import extract_pcode_from_url, normalize_href
 
 
 class TestExtractPcodeFromUrl:

@@ -8,7 +8,7 @@ from src.crawlers.danawa import DanawaCrawler
 from src.repositories.impl.search_log_repository import SearchLogRepository
 from src.repositories.impl.search_failure_repository import SearchFailureRepository
 from src.repositories.impl.price_cache_repository import PriceCacheRepository
-from src.utils.search_optimizer import DanawaSearchHelper
+from src.utils.search import DanawaSearchHelper
 from src.core.logging import logger
 from src.core.exceptions import ProductNotFoundException, CrawlerException
 from src.core.config import settings

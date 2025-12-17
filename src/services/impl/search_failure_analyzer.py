@@ -10,7 +10,7 @@ class SearchFailureAnalyzer:
     """검색 실패 패턴 분석 및 학습"""
     
     @staticmethod
-    def get_analytics_dashboard(db: Session) -> Dict:
+    def get_analytics_dashboard(db: Session) -> dict[str, any]:
         """분석 대시보드"""
         stats = SearchFailureRepository.get_failure_stats(db)
         common = SearchFailureRepository.get_common_failures(db, limit=20)

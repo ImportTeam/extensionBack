@@ -308,7 +308,7 @@ async def test_redis_connection_and_ttl():
     assert cached.lowest_price == 100000
     
     # TTL 확인
-    from src.utils.hash_utils import generate_cache_key
+    from src.utils.hash import generate_cache_key
     cache_key = generate_cache_key("테스트 상품")
     ttl = cache.redis_client.ttl(cache_key)
     assert ttl > 0, "❌ TTL이 설정되지 않음"

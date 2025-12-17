@@ -1,7 +1,6 @@
 """데이터베이스 연결 및 세션 관리"""
 from sqlalchemy import create_engine
-from sqlalchemy.ext.declarative import declarative_base
-from sqlalchemy.orm import sessionmaker, Session
+from sqlalchemy.orm import declarative_base, sessionmaker, Session
 from contextlib import contextmanager
 from typing import Generator
 

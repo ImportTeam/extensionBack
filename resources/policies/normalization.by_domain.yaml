@@ -1,4 +1,5 @@
 version: 1
+terms: {}
 # 도메인별 정책: "무엇을 지울지"는 여기서 결정
 
 by_domain:

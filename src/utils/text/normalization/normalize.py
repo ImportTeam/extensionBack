@@ -20,7 +20,7 @@ def normalize_search_query(text: str) -> str:
 
         normalized = normalize_query(text, vendor="danawa")
         if normalized:
-            return normalized
+            return str(normalized)
     except Exception as e:
         logger.debug(f"UPCS normalization fallback: {type(e).__name__}: {e}")
 
