@@ -9,7 +9,7 @@ from playwright.async_api import Page, TimeoutError as PlaywrightTimeoutError
 
 from src.core.config import settings
 from src.core.logging import logger
-from src.utils.text_utils import extract_price_from_text
+from src.utils.text import extract_price_from_text
 from src.utils.url_utils import normalize_href
 
 from .price_trend import extract_price_trend

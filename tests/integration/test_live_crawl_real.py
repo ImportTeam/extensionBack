@@ -17,7 +17,7 @@ import os
 import pytest
 from src.services.cache_service import CacheService
 from src.services.price_search_service import PriceSearchService
-from src.utils.text_utils import clean_product_name
+from src.utils.text import clean_product_name
 
 pytestmark = pytest.mark.asyncio
 

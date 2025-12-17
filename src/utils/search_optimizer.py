@@ -35,7 +35,7 @@ class DanawaSearchHelper:
     
     def extract_brand_and_model(self, product_name: str) -> tuple[str, str]:
         """브랜드와 모델명 추출"""
-        from src.utils.text_utils import clean_product_name, split_kr_en_boundary
+        from src.utils.text import clean_product_name, split_kr_en_boundary
         
         cleaned = clean_product_name(product_name)
         normalized = split_kr_en_boundary(cleaned)
@@ -62,7 +62,7 @@ class DanawaSearchHelper:
         4. 브랜드만
         5. 대체 검색어 (예: "맥북" → "MacBook", "Apple laptop" 등)
         """
-        from src.utils.text_utils import clean_product_name, normalize_search_query
+        from src.utils.text import clean_product_name, normalize_search_query
         
         candidates = []
         product_lower = (product_name or "").lower()
@@ -116,7 +116,7 @@ class DanawaSearchHelper:
     
     def get_smart_search_query(self, product_name: str) -> str:
         """가장 효율적인 검색어 반환 (우선순위: 정규화 → 브랜드+모델 → 모델)"""
-        from src.utils.text_utils import normalize_search_query
+        from src.utils.text import normalize_search_query
         
         # 카테고리 감지
         category = self.detect_category(product_name)

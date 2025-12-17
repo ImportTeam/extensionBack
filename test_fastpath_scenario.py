@@ -1,7 +1,7 @@
 #!/usr/bin/env python
 """정규화 개선 후 HTTP Fast Path 검색 재현 테스트"""
 
-from src.utils.text_utils import normalize_search_query, clean_product_name
+from src.utils.text import normalize_search_query, clean_product_name
 
 # 사용자가 겪었던 실제 시나리오
 original_query = "화이트케이스 Apple 에어팟 프로 2세대 화이트 블루투스 이어폰C"

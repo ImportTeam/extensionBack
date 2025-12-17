@@ -15,7 +15,7 @@ from typing import Dict, Optional
 from src.core.config import settings
 from src.core.exceptions import CrawlerException, ProductNotFoundException
 from src.core.logging import logger
-from src.utils.text_utils import clean_product_name, normalize_search_query
+from src.utils.text import clean_product_name, normalize_search_query
 
 from src.crawlers.danawa.boundary import (
     TimeoutManager,

@@ -19,7 +19,7 @@ async def lifespan(app: FastAPI):
     # 필요하면 env로 crawler_playwright_warmup=true 설정하여 warmup 가능
     if getattr(settings, "crawler_playwright_warmup", False):
         try:
-            from src.crawlers.danawa_crawler import DanawaCrawler
+            from src.crawlers.danawa import DanawaCrawler
 
             await DanawaCrawler.warmup()
         except Exception:
@@ -29,7 +29,7 @@ async def lifespan(app: FastAPI):
     yield
     logger.info("Shutting down application...")
     try:
-        from src.crawlers.danawa_crawler import DanawaCrawler
+        from src.crawlers.danawa import DanawaCrawler
         from src.crawlers.http_client import shutdown_shared_http_client
 
         await DanawaCrawler.shutdown_shared_browser()

@@ -4,7 +4,7 @@ from typing import Optional, Dict, Any
 from sqlalchemy.orm import Session
 
 from src.services.cache_service import CacheService
-from src.crawlers.danawa_crawler import DanawaCrawler
+from src.crawlers.danawa import DanawaCrawler
 from src.repositories.search_log_repository import SearchLogRepository
 from src.repositories.search_failure_repository import SearchFailureRepository
 from src.repositories.price_cache_repository import PriceCacheRepository
@@ -56,7 +56,7 @@ class PriceSearchService:
             }
         """
         # 검색어를 먼저 정규화하여 캐시 키와 검색 일관성 유지
-        from src.utils.text_utils import clean_product_name, normalize_search_query
+        from src.utils.text import clean_product_name, normalize_search_query
         
         # 정규화된 상품명으로 캐시 키 생성
         normalized_name = normalize_search_query(product_name) or clean_product_name(product_name)

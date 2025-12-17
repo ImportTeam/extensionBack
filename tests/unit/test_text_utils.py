@@ -1,13 +1,13 @@
 """텍스트 유틸리티 유닛 테스트"""
 import pytest
-from src.utils.text_utils import (
+from src.utils.text import (
     clean_product_name,
     extract_price_from_text,
     calculate_similarity
 )
-from src.utils.text_utils import split_kr_en_boundary
-from src.utils.text_utils import normalize_search_query, extract_model_codes
-from src.utils.text_utils import is_accessory_trap, weighted_match_score
+from src.utils.text import split_kr_en_boundary
+from src.utils.text import normalize_search_query, extract_model_codes
+from src.utils.text import is_accessory_trap, weighted_match_score
 
 
 class TestCleanProductName:

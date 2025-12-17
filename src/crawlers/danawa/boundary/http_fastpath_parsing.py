@@ -12,7 +12,7 @@ from typing import Optional, List, Dict
 from selectolax.parser import HTMLParser
 
 from src.core.config import settings
-from src.utils.text_utils import extract_price_from_text, weighted_match_score
+from src.utils.text import extract_price_from_text, weighted_match_score
 from src.utils.url_utils import normalize_href
 
 
