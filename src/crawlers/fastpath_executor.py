@@ -49,22 +49,32 @@ class FastPathExecutor(SearchExecutor):
             FastPathNoResults: 검색 결과 없음
             FastPathProductFetchFailed: 상품 가져오기 실패
         """
-        from src.crawlers.boundary import http_fastpath_search
+        from src.crawlers.boundary import DanawaHttpFastPath
+        from src.utils.search.search_optimizer import DanawaSearchHelper
 
         logger.debug(f"[FastPath] Executing: query='{query}', timeout={timeout:.2f}s")
 
         # 쿼리 정규화
         normalized_query = normalize_for_search_query(query)
-        cache_key = build_cache_key(normalized_query)
+
+        # 검색 후보 생성
+        helper = DanawaSearchHelper()
+        candidates = helper.generate_search_candidates(normalized_query)
 
         # HTTP FastPath 실행
-        result = await http_fastpath_search(
-            search_query=cache_key,
-            timeout_ms=int(timeout * 1000),
+        fastpath = DanawaHttpFastPath()
+        result = await fastpath.search_lowest_price(
+            query=normalized_query,
+            candidates=candidates,
+            total_timeout_ms=int(timeout * 1000),
         )
 
+        if not result:
+            from src.crawlers.boundary import FastPathNoResults
+            raise FastPathNoResults(f"No result from FastPath for: {query}")
+
         logger.debug(
-            f"[FastPath] Success: url={result['product_url']}, price={result['price']}"
+            f"[FastPath] Success: url={result.get('product_url')}, price={result.get('price')}"
         )
 
         return CrawlResult(

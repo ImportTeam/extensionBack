@@ -13,7 +13,7 @@ from selectolax.parser import HTMLParser
 
 from src.core.config import settings
 from src.core.logging import logger
-from src.utils.text import extract_price_from_text, weighted_match_score
+from src.utils.text_utils import extract_price_from_text, weighted_match_score
 from src.utils.url import normalize_href
 
 

@@ -13,7 +13,7 @@ from .hash_utils import hash_string, generate_cache_key, generate_negative_cache
 from .url_utils import extract_pcode_from_url, normalize_href
 
 # Search helper
-from .search_helper import DanawaSearchHelper
+from .search.search_optimizer import DanawaSearchHelper
 
 # Text utilities (통합 완료)
 from .text_utils import (

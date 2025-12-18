@@ -9,7 +9,7 @@ from urllib.parse import quote
 from playwright.async_api import Page, TimeoutError as PlaywrightTimeoutError
 
 from src.core.logging import logger
-from src.utils.text import weighted_match_score
+from src.utils.text_utils import weighted_match_score
 
 
 async def search_product(
@@ -32,7 +32,7 @@ async def search_product(
     Returns:
         상품 코드(pcode) 또는 None
     """
-    from src.utils.search import DanawaSearchHelper
+    from src.utils.search.search_optimizer import DanawaSearchHelper
 
     page = await create_page()
 

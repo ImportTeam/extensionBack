@@ -55,7 +55,7 @@ async def ensure_shared_browser() -> tuple[Playwright, Browser, BrowserContext]:
         if _shared_browser is not None:
             try:
                 if _shared_browser.is_connected() and _shared_context is not None:
-                    return _shared_playwright, _shared_browser, _shared_context  # type: ignore[return-value]
+                    return _shared_playwright, _shared_browser, _shared_context
             except Exception:
                 pass
 

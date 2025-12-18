@@ -2,14 +2,14 @@
 
 from __future__ import annotations
 
-from typing import Dict
+from typing import Any, Dict, Optional, cast
 
 from playwright.async_api import Page
 
 from src.core.logging import logger
 
 
-async def extract_price_trend(page: Page) -> list[Dict]:
+async def extract_price_trend(page: Page, timeout: Optional[float] = None) -> list[dict[str, Any]]:
     """
     최저가 추이 그래프 데이터 추출
 
@@ -23,7 +23,7 @@ async def extract_price_trend(page: Page) -> list[Dict]:
     """
     try:
         # 네트워크 요청 감시 (AJAX로 차트 데이터를 가져오는 경우)
-        price_trend_data: list[dict[str, any]] = []
+        price_trend_data: list[dict[str, Any]] = []
 
         async def handle_response(response):
             try:
@@ -114,7 +114,7 @@ async def extract_price_trend(page: Page) -> list[Dict]:
 
         if chart_data and isinstance(chart_data, list) and len(chart_data) > 0:
             logger.info(f"✅ Extracted {len(chart_data)} price trend points from ECharts")
-            return chart_data
+            return cast(list[dict[str, Any]], chart_data)
 
         # Fallback 1: 페이지 전역 변수 확인
         logger.info("Trying to extract price trend from global variables")
@@ -174,8 +174,8 @@ async def extract_price_trend(page: Page) -> list[Dict]:
                 logger.error(f"Error parsing trend data from source: {e}")
 
         logger.warning("❌ No price trend data found (ECharts, globals, and source parsing all failed)")
-        return []
+        return cast(list[dict[str, Any]], [])
 
     except Exception as e:
         logger.error(f"Error extracting price trend: {e}")
-        return []
+        return cast(list[dict[str, Any]], [])

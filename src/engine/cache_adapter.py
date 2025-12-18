@@ -48,9 +48,11 @@ class CacheAdapter:
             if cached:
                 # CachedPrice -> dict 변환
                 return {
-                    "product_url": cached.url,
-                    "url": cached.url,  # 호환성
-                    "price": cached.price,
+                    "product_url": cached.product_url,
+                    "price": cached.lowest_price,
+                    "product_name": cached.product_name,
+                    "mall": cached.mall,
+                    "free_shipping": cached.free_shipping,
                 }
             return None
         except Exception as e:

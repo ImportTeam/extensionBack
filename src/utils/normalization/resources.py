@@ -10,7 +10,7 @@ import re
 from dataclasses import dataclass
 from functools import lru_cache
 from pathlib import Path
-from typing import Any, Dict, Iterable, Optional, Set, Tuple
+from typing import Any, Dict, Iterable, Optional, Set, Tuple, cast
 
 from src.core.logging import logger
 
@@ -302,6 +302,13 @@ def _remove_tokens_by_dict(text: str, words: Set[str]) -> str:
 
 def normalize_search_query_with_resources(text: str, vendor: Optional[str] = None) -> str:
     """DEPRECATED: UPCS 기반 정규화로 대체되었습니다."""
-    from src.upcs.normalizer import normalize_query
-
-    return normalize_query(text, vendor=vendor)
+    try:
+        from src.upcs.normalizer import normalize_query
+        result = normalize_query(text, vendor=vendor)
+        # normalize_query returns Any - cast to ensure type safety
+        if isinstance(result, str):
+            return result
+        return str(result).strip()
+    except (ImportError, Exception):
+        # Fallback: 간단한 정규화
+        return str(text).strip().lower() if text else ""

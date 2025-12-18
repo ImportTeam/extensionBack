@@ -140,10 +140,12 @@ async def search_price(
                     mall="다나와",
                     free_shipping=None,  # TODO: 배송비 정보
                     top_prices=None,  # TODO: TOP 가격 정보
+                    price_trend=None,  # TODO: 가격 추이
                     source=result.source,
                     elapsed_ms=result.elapsed_ms,
                 ),
                 message="최저가를 찾았습니다.",
+                error_code=None,
             )
 
         # 실패 응답
@@ -202,8 +204,6 @@ def _log_search(
             origin_price=origin_price,
             found_price=found_price,
             status=status,
-            source=source,
-            elapsed_ms=elapsed_ms,
         )
         db.commit()
         logger.debug(f"[API] Search log saved: query='{query_name}', status={status}")
@@ -216,13 +216,60 @@ def _log_search(
 # 현재는 legacy 로직 사용
 @router.get("/price/statistics")
 async def get_search_statistics(db: Session = Depends(get_db)):
-    """검색 통계 API (Legacy)"""
-    from src.api.routes.price_routes_legacy import get_statistics
-    return await get_statistics(db)
+    """검색 통계 API
+    
+    Returns:
+        - total_searches: 총 검색 횟수
+        - cache_hits: 캠시 히트 횟수
+        - hit_rate: 캠시 히트율 (%)
+        - popular_queries: 인기 검색어 Top 5
+    """
+    from src.repositories.impl.search_log_repository import SearchLogRepository
+    from src.schemas.price_schema import StatisticsResponse, PopularQuery
+    
+    repo = SearchLogRepository(db)
+    
+    total_searches = repo.get_total_count()
+    cache_hits = repo.get_cache_hit_count()
+    hit_rate = (cache_hits / total_searches * 100) if total_searches > 0 else 0
+    
+    popular_queries_data = repo.get_popular_queries(limit=5)
+    popular_queries = [
+        PopularQuery(name=name, count=count)
+        for name, count in popular_queries_data
+    ]
+    
+    logger.info(f"Statistics: {total_searches} searches, {hit_rate:.2f}% hit rate")
+    
+    return StatisticsResponse(
+        total_searches=total_searches,
+        cache_hits=cache_hits,
+        hit_rate=round(hit_rate, 2),
+        popular_queries=popular_queries
+    )
 
 
 @router.get("/price/popular")
-async def get_popular_queries_api(db: Session = Depends(get_db)):
-    """인기 검색어 API (Legacy)"""
-    from src.api.routes.price_routes_legacy import get_popular_queries
-    return await get_popular_queries(db)
+async def get_popular_queries_api(db: Session = Depends(get_db), limit: int = 10):
+    """인기 검색어 API
+    
+    Args:
+        limit: 반환할 검색어 수 (기본 10개)
+    
+    Returns:
+        인기 검색어 목록
+    """
+    from src.repositories.impl.search_log_repository import SearchLogRepository
+    from src.schemas.price_schema import PopularQuery
+    
+    repo = SearchLogRepository(db)
+    popular_queries_data = repo.get_popular_queries(limit=limit)
+    
+    popular_queries = [
+        PopularQuery(name=name, count=count)
+        for name, count in popular_queries_data
+    ]
+    
+    logger.info(f"Popular queries requested: top {limit}")
+    
+    return {"popular_queries": popular_queries}

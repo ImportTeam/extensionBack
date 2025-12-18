@@ -53,46 +53,56 @@ class SlowPathExecutor(SearchExecutor):
         """
         from src.crawlers.playwright.search import search_product
         from src.crawlers.playwright.detail import get_product_lowest_price
+        from src.crawlers.playwright import ensure_shared_browser, new_page
 
         logger.debug(f"[SlowPath] Executing: query='{query}', timeout={timeout:.2f}s")
 
         # 쿼리 정규화
         normalized_query = normalize_for_search_query(query)
-        cache_key = build_cache_key(normalized_query)
 
-        # Playwright 검색 실행
-        # 타임아웃을 밀리초로 변환
-        timeout_ms = int(timeout * 1000)
+        # Playwright 실행
+        browser = await ensure_shared_browser()
+        page = await new_page()
 
-        # 1단계: 상품 검색
-        search_result = await search_product(
-            query=cache_key,
-            timeout_ms=timeout_ms // 2,  # 검색에 절반 할당
-        )
+        try:
+            # 1단계: 상품 검색 (pcode 추출)
+            search_url_base = "https://search.danawa.com/dsearch.php"
+            pcode = await search_product(
+                create_page=lambda: new_page(),
+                search_url_base=search_url_base,
+                search_query=normalized_query,
+                overall_timeout_s=timeout / 2,
+            )
 
-        if not search_result or not search_result.get("product_url"):
-            from src.core.exceptions import ProductNotFoundException
+            if not pcode:
+                from src.core.exceptions import ProductNotFoundException
+                raise ProductNotFoundException(f"No product found for query: {query}")
 
-            raise ProductNotFoundException(f"No product found for query: {query}")
+            # 2단계: 가격 정보 가져오기
+            product_url_base = f"https://prod.danawa.com/info/?pcode={pcode}"
+            price_data = await get_product_lowest_price(
+                page=page,
+                product_url_base=product_url_base,
+                product_code=pcode,
+                search_query=normalized_query,
+            )
 
-        product_url = search_result["product_url"]
+            if not price_data:
+                from src.core.exceptions import ProductNotFoundException
+                raise ProductNotFoundException(f"No price found for pcode: {pcode}")
 
-        # 2단계: 가격 정보 가져오기
-        price_result = await get_product_lowest_price(
-            product_url=product_url,
-            timeout_ms=timeout_ms // 2,  # 가격 조회에 절반 할당
-        )
+            logger.debug(
+                f"[SlowPath] Success: pcode={pcode}, price={price_data.get('lowest_price')}"
+            )
 
-        logger.debug(
-            f"[SlowPath] Success: url={product_url}, price={price_result['price']}"
-        )
-
-        return CrawlResult(
-            product_url=product_url,
-            price=price_result["price"],
-            product_name=search_result.get("product_name"),
-            metadata={"method": "slowpath", "timeout": timeout},
-        )
+            return CrawlResult(
+                product_url=product_url_base,
+                price=price_data["lowest_price"],
+                product_name=price_data.get("product_name"),
+                metadata={"method": "slowpath", "timeout": timeout, "pcode": pcode},
+            )
+        finally:
+            await page.close()
 
     @classmethod
     def from_crawler(cls, crawler) -> "SlowPathExecutor":

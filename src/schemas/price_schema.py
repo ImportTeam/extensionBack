@@ -39,6 +39,10 @@ class PriceData(BaseModel):
     free_shipping: bool | None = Field(None, description="최저가 무료배송 여부")
     top_prices: list[MallPrice] | None = Field(None, description="쇼핑몰별 최저가 Top N")
     price_trend: list[PriceTrendPoint] | None = Field(None, description="최저가 추이")
+    
+    # Engine Layer 메타데이터
+    source: str = Field(..., description="결과 출처: cache | fastpath | slowpath")
+    elapsed_ms: float = Field(..., ge=0, description="검색 소요 시간 (밀리초)")
 
 
 class PriceSearchResponse(BaseModel):
@@ -46,19 +50,20 @@ class PriceSearchResponse(BaseModel):
     status: str = Field(..., description="success or fail")
     data: Optional[PriceData] = Field(None, description="가격 정보")
     message: str = Field(..., description="응답 메시지")
+    error_code: str | None = Field(None, description="에러 코드 (fail 시)")
 
 
 class CachedPrice(BaseModel):
-    """캐시된 가격 정보"""
-    product_name: str
-    lowest_price: int
-    link: str
-    source: str
-    mall: str | None = None
-    free_shipping: bool | None = None
-    top_prices: list[MallPrice] | None = None
-    price_trend: list[PriceTrendPoint] | None = None
-    updated_at: str
+    """캐시된 가격 정보 (strict typing)"""
+    product_name: str = Field(..., description="상품명")
+    lowest_price: int = Field(..., ge=0, description="최저가")
+    product_url: str = Field(..., description="상품 URL")  # link → product_url로 통일
+    source: str = Field(..., description="cache | fastpath | slowpath")
+    mall: str | None = Field(None, description="쇼핑몰")
+    free_shipping: bool | None = Field(None, description="무료배송")
+    top_prices: list[MallPrice] | None = Field(None, description="TOP 가격")
+    price_trend: list[PriceTrendPoint] | None = Field(None, description="가격 추이")
+    updated_at: str = Field(..., description="업데이트 시간")
 
 
 class HealthResponse(BaseModel):

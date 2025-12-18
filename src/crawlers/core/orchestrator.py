@@ -11,13 +11,13 @@ from __future__ import annotations
 
 import asyncio
 import re
-from typing import Dict, Optional
+from typing import Any, Dict, Optional, cast
 
 from src.core.config import settings
 from src.core.exceptions import CrawlerException, ProductNotFoundException
 from src.core.logging import logger
 from src.utils.text_utils import clean_product_name, build_cache_key, normalize_for_search_query
-from src.utils.text.normalization import normalize_search_query
+from src.utils.normalization.normalize import normalize_search_query
 
 from src.crawlers.boundary import (
     TimeoutManager,
@@ -92,7 +92,7 @@ async def search_lowest_price(
     logger.info(f"[CRAWL] Starting search: {product_name} (HTTP: 10s, PW: 15s)")
 
     # 🔴 기가차드 수정: 검색 후보를 미리 생성하여 HTTP와 Playwright에서 공유 (중복 분석 방지)
-    from src.utils.search import DanawaSearchHelper
+    from src.utils.search.search_optimizer import DanawaSearchHelper
     helper = DanawaSearchHelper()
     candidates = helper.generate_search_candidates(product_name)
     logger.info(f"[CRAWL] Using search candidates: {candidates}")
@@ -127,7 +127,7 @@ async def search_lowest_price(
                         if fast:
                             logger.info(f"[HTTP-FASTPATH] ✅ Phase 1 SUCCESS (elapsed: {timeout_mgr.phase_elapsed_ms}ms)")
                             cb.record_success()
-                            return fast
+                            return cast(dict[str, Any] | None, fast)
                         logger.warning(f"[HTTP-FASTPATH] ⚠️  Phase 1 RETURNED NONE")
                         cb.record_failure()
                 else:

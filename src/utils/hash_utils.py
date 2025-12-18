@@ -25,7 +25,7 @@ def generate_cache_key(product_name: str) -> str:
     Returns:
         Redis 캐시 키
     """
-    from src.utils.text import clean_product_name
+    from src.utils.text_utils import clean_product_name
     
     cleaned = clean_product_name(product_name)
     hashed = hash_string(cleaned)
@@ -34,7 +34,7 @@ def generate_cache_key(product_name: str) -> str:
 
 def generate_negative_cache_key(product_name: str) -> str:
     """상품명으로 '부정 캐시'(검색 실패/미발견) 키 생성"""
-    from src.utils.text import clean_product_name
+    from src.utils.text_utils import clean_product_name
 
     cleaned = clean_product_name(product_name)
     hashed = hash_string(cleaned)

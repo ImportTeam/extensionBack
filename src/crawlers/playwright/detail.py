@@ -9,7 +9,7 @@ from playwright.async_api import Page, TimeoutError as PlaywrightTimeoutError
 
 from src.core.config import settings
 from src.core.logging import logger
-from src.utils.text import extract_price_from_text
+from src.utils.text_utils import extract_price_from_text
 from src.utils.url import normalize_href
 
 from .price_trend import extract_price_trend
@@ -78,7 +78,7 @@ async def get_product_lowest_price(
             product_name = product_name.strip()
 
         # 🔴 기가차드 수정: 상품명 검증 (pcode 오매핑 최종 방어)
-        from src.utils.text.matching.matching import weighted_match_score
+        from src.utils.text_utils import weighted_match_score
         match_score = weighted_match_score(search_query, product_name)
         if match_score < 45.0:
             logger.error(
