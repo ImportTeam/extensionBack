@@ -48,6 +48,10 @@ async def get_product_lowest_price(
         try:
             await page.wait_for_selector('#lowPriceCompanyArea', timeout=5000)
         except PlaywrightTimeoutError:
+            # 🔴 기가차드 수정: 단종 상품 또는 리다이렉트 페이지 감지
+            if await page.query_selector('.discontinued, .no_result, .lowest_report'):
+                logger.warning(f"Product discontinued or redirected to report: {product_code}")
+                return None
             logger.warning(f"Price area not found for pcode: {product_code}")
             return None
 
@@ -73,6 +77,18 @@ async def get_product_lowest_price(
             product_name = await product_name_elem.inner_text()
             product_name = product_name.strip()
 
+        # 🔴 기가차드 수정: 상품명 검증 (pcode 오매핑 최종 방어)
+        from src.utils.text.matching.matching import weighted_match_score
+        match_score = weighted_match_score(search_query, product_name)
+        if match_score < 45.0:
+            logger.error(
+                f"Product mismatch on detail page! query='{search_query}' vs page='{product_name}' "
+                f"(score: {match_score:.1f})"
+            )
+            return None
+        
+        logger.info(f"Detail page validated: '{product_name}' (score: {match_score:.1f})")
+
         # 최저가 추이 데이터는 비용이 크므로 기본 비활성화(성능 우선)
         price_trend: list[Dict] = []
         if getattr(settings, "crawler_enable_price_trend", False):
@@ -84,6 +100,34 @@ async def get_product_lowest_price(
         )
 
         if not price_items:
+            # 🔴 기가차드 수정: 대표 최저가 영역 시도 (쇼핑몰 목록이 없는 경우)
+            rep_price_elem = await page.query_selector('.lowest_area .price_sect .num, .lowest_area .price_sect .price_num, .lowest_price .num')
+            if rep_price_elem:
+                rep_price_text = await rep_price_elem.inner_text()
+                rep_price_value = extract_price_from_text(rep_price_text)
+                if rep_price_value > 0:
+                    rep_mall_elem = await page.query_selector('.lowest_area .mall_name, .lowest_price .mall_name, .lowest_area .mall_logo img')
+                    if rep_mall_elem:
+                        if await rep_mall_elem.evaluate('el => el.tagName === "IMG"'):
+                            rep_mall_name = await rep_mall_elem.get_attribute('alt') or "다나와최저가"
+                        else:
+                            rep_mall_name = await rep_mall_elem.inner_text()
+                    else:
+                        rep_mall_name = "다나와최저가"
+                    
+                    from datetime import datetime
+                    return {
+                        "product_name": product_name,
+                        "lowest_price": rep_price_value,
+                        "link": product_url,
+                        "source": "danawa",
+                        "mall": rep_mall_name.strip(),
+                        "free_shipping": None,
+                        "top_prices": [],
+                        "price_trend": price_trend,
+                        "updated_at": datetime.now().isoformat()
+                    }
+            
             logger.warning("No mall price found")
             return None
 
@@ -98,15 +142,28 @@ async def get_product_lowest_price(
         for idx, item in enumerate(top_items):
             price_elem = await item.query_selector('.sell-price .text__num')
             if not price_elem:
-                continue
+                # 🔴 기가차드 수정: 다른 클래스명 시도 (구조 변경 대응)
+                price_elem = await item.query_selector('.price .num, .text__num')
+                if not price_elem:
+                    continue
 
             price_text = await price_elem.inner_text()
             price_value = extract_price_from_text(price_text)
             if price_value <= 0:
                 continue
 
-            mall_elem = await item.query_selector('.box__logo img')
-            mall_name = await mall_elem.get_attribute('alt') if mall_elem else "알 수 없음"
+            # 🔴 기가차드 수정: 쇼핑몰 이름 추출 강화 (이미지 alt 외에 텍스트도 확인)
+            mall_name = "알 수 없음"
+            mall_img = await item.query_selector('.box__logo img')
+            if mall_img:
+                mall_name = await mall_img.get_attribute('alt') or "알 수 없음"
+            
+            if mall_name == "알 수 없음":
+                mall_text_elem = await item.query_selector('.box__logo .text, .mall-name')
+                if mall_text_elem:
+                    mall_name = await mall_text_elem.inner_text()
+            
+            mall_name = mall_name.strip() if mall_name else "알 수 없음"
 
             delivery_elem = await item.query_selector('.box__delivery')
             delivery_text = (await delivery_elem.inner_text()) if delivery_elem else ""

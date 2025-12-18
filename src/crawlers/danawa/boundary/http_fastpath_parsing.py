@@ -158,6 +158,13 @@ def parse_search_pcandidates(html: str, query: str, max_candidates: int = 12) ->
         text = (node.text() or "").strip()
         
         score = weighted_match_score(query, text)
+        
+        # 🔴 기가차드 수정: 최소 점수 미달 시 후보에서 제외 (오매핑 방지)
+        # 40점 미만은 아예 다른 상품일 확률이 높음
+        if score < 40.0:
+            logger.debug(f"[FAST_PATH] Skipping low score candidate: '{text}' (score: {score:.1f})")
+            continue
+            
         scored.append((score, pcode))
 
     scored.sort(key=lambda t: t[0], reverse=True)
@@ -212,10 +219,44 @@ def parse_product_lowest_price(html: str, fallback_name: str, product_url: str) 
 
     title_node = parser.css_first(".prod_tit")
     raw_title = (title_node.text().strip() if title_node and title_node.text() else fallback_name)
+    
+    # 🔴 기가차드 수정: 상품명 검증 (HTTP FastPath 오매핑 방어)
+    # 검증은 모델 코드가 포함된 raw_title로 수행해야 정확합니다.
+    from src.utils.text.matching.matching import weighted_match_score
+    match_score = weighted_match_score(fallback_name, raw_title)
+    if match_score < 45.0:
+        logger.error(
+            f"[FAST_PATH] Product mismatch! query='{fallback_name}' vs page='{raw_title}' "
+            f"(score: {match_score:.1f})"
+        )
+        return None
+
+    # DB/FE 표시용으로만 클리닝 수행
     product_name = clean_display_text(raw_title)
 
     items = parser.css("#lowPriceCompanyArea .box__mall-price .list__mall-price .list-item")
     if not items:
+        # 🔴 기가차드 수정: 대표 최저가 영역 시도 (쇼핑몰 목록이 없는 경우)
+        rep_price_node = parser.css_first(".lowest_area .price_sect .num, .lowest_area .price_sect .price_num, .lowest_price .num")
+        if rep_price_node:
+            rep_price_text = rep_price_node.text().strip()
+            rep_price_value = extract_price_from_text(rep_price_text)
+            if rep_price_value > 0:
+                rep_mall_node = parser.css_first(".lowest_area .mall_name, .lowest_price .mall_name, .lowest_area .mall_logo img")
+                if rep_mall_node and rep_mall_node.tag == "img":
+                    rep_mall_name = rep_mall_node.attributes.get("alt") or "다나와최저가"
+                else:
+                    rep_mall_name = rep_mall_node.text().strip() if rep_mall_node else "다나와최저가"
+                
+                return FastPathResult(
+                    product_name=product_name,
+                    lowest_price=rep_price_value,
+                    link=product_url,
+                    mall=rep_mall_name,
+                    free_shipping=None,
+                    top_prices=[],
+                    price_trend=[],
+                )
         return None
 
     top_items = items[:3]
@@ -228,6 +269,10 @@ def parse_product_lowest_price(html: str, fallback_name: str, product_url: str) 
 
     for idx, item in enumerate(top_items):
         price_node = item.css_first(".sell-price .text__num")
+        if not price_node:
+            # 구조 변경 대응
+            price_node = item.css_first(".price .num, .text__num")
+            
         price_text = price_node.text().strip() if price_node and price_node.text() else ""
         price_value = extract_price_from_text(price_text)
         if price_value <= 0:
@@ -239,8 +284,16 @@ def parse_product_lowest_price(html: str, fallback_name: str, product_url: str) 
         if min_price_threshold and price_value < min_price_threshold:
             continue
 
+        # 🔴 기가차드 수정: 쇼핑몰 이름 추출 강화
         mall_img = item.css_first(".box__logo img")
         mall_name = mall_img.attributes.get("alt") if mall_img else None
+        
+        if not mall_name:
+            mall_text_node = item.css_first(".box__logo .text, .mall-name")
+            if mall_text_node:
+                mall_name = mall_text_node.text().strip()
+        
+        mall_name = mall_name or "알 수 없음"
 
         delivery_node = item.css_first(".box__delivery")
         delivery_text = delivery_node.text().strip() if delivery_node and delivery_node.text() else ""

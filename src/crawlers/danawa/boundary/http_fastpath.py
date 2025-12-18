@@ -131,6 +131,7 @@ class DanawaHttpFastPath:
         # Note: Probing removed to save time. We'll fail fast on actual fetch if host is down.
         chosen_pcode: Optional[str] = None
         chosen_result: Optional[dict] = None
+        seen_pcodes: set[str] = set()  # 🔴 기가차드 수정: 중복 분석 방지
         # 개별 요청마다 고정 타임아웃 적용 (phase budget과 분리)
         per_try_ms = int(getattr(settings, "crawler_http_request_timeout_ms", getattr(settings, "crawler_http_timeout_ms", 4000)))
         
@@ -162,6 +163,10 @@ class DanawaHttpFastPath:
 
             # 상위 pcode 여러 개를 실제 상품 상세로 검증해 액세서리/오탐을 회피
             for pcode_rank, pcode in enumerate(pcodes[:max_pcodes_per_candidate], start=1):
+                if pcode in seen_pcodes:
+                    continue
+                seen_pcodes.add(pcode)
+
                 remaining_total_ms = int(max(0.0, (deadline - loop.time()) * 1000.0))
                 if remaining_total_ms <= 0:
                     logger.info("[FAST_PATH] Total budget exhausted before product fetch")

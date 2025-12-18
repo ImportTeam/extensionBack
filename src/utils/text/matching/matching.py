@@ -102,18 +102,22 @@ def weighted_match_score(query: str, candidate: str) -> float:
 
     score = base
 
-    # [핵심] 제품군(Pro/Air/Max/Mini) 불일치 - 강한 필터
-    ipad_variants = {"pro", "air", "max", "mini"}
-    q_ipad = any(word in query.lower() for word in ipad_variants)
-    c_ipad = any(word in candidate.lower() for word in ipad_variants)
+    # [핵심] 제품군(Pro/Air/Max/Mini/Ultra/FE) 불일치 - 강한 필터
+    # iPad, iPhone, Galaxy 등 공통 적용
+    variants = {"pro", "air", "max", "mini", "ultra", "fe", "plus"}
+    q_lower = query.lower()
+    c_lower = candidate.lower()
+    
+    q_variant = [w for w in variants if w in q_lower]
+    c_variant = [w for w in variants if w in c_lower]
 
-    if q_ipad and c_ipad:
-        # 둘 다 iPad인데 variant가 다르면 (Pro vs Air)
-        q_variant = [w for w in ipad_variants if w in query.lower()]
-        c_variant = [w for w in ipad_variants if w in candidate.lower()]
-        if q_variant and c_variant and q_variant != c_variant:
-            logger.debug(f"iPad variant mismatch: query={q_variant} vs candidate={c_variant}")
-            score -= 50.0  # 강한 패널티
+    if q_variant or c_variant:
+        # 둘 중 하나라도 variant가 있는데 서로 다르면 (Pro vs Air, Pro vs None 등)
+        # 단, 쿼리에 없는데 후보에 있는 경우는 '범용'일 수 있으므로 감점만, 
+        # 쿼리에 있는데 후보에 없거나 다르면 강한 패널티
+        if q_variant != c_variant:
+            logger.debug(f"Variant mismatch: query={q_variant} vs candidate={c_variant}")
+            score -= 45.0
 
     # [핵심] CPU/칩셋 정보 추출 및 비교 (M5 vs M3 등)
     # - 쿼리가 특정 M칩을 요구하고 후보가 다른 M칩을 명시하면: 하드 제외(0점)

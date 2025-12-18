@@ -53,44 +53,39 @@ class DanawaSearchHelper:
         return brand, model
     
     def generate_search_candidates(self, product_name: str) -> list[str]:
-        """계층적 폴백 검색 후보 생성 (효율적)
-        
-        순서대로 시도하면 대부분 처음 2-3개 내에서 검색 성공:
-        1. 정규화된 전체 검색어
-        2. 브랜드 + 모델 (핵심만)
-        3. 모델명만
-        4. 브랜드만
-        5. 대체 검색어 (예: "맥북" → "MacBook", "Apple laptop" 등)
-        """
+        """계층적 폴백 검색 후보 생성 (효율적)"""
         from src.utils.text import clean_product_name, normalize_search_query
         
         candidates = []
-        product_lower = (product_name or "").lower()
+        seen = set()
         
+        def add_candidate(cand: str):
+            if cand and cand not in seen:
+                seen.add(cand)
+                candidates.append(cand)
+
         # 1. 정규화된 전체 (이미 충분히 정제됨)
         normalized = normalize_search_query(product_name)
-        if normalized:
-            candidates.append(normalized)
+        add_candidate(normalized)
         
         # 2. 브랜드 + 모델명 추출
         brand, model = self.extract_brand_and_model(product_name)
         if brand and model:
             # 모델에서 과도한 스펙 제거
             model_cleaned = re.sub(r'\s*\d+(\.\d+)?[GgTt][Bb]\s*', '', model)
-            candidates.append(f"{brand} {model_cleaned}".strip())
+            add_candidate(f"{brand} {model_cleaned}".strip())
         
         # 3. 모델명만 (처음 2-3개 단어)
         if model:
             model_tokens = model.split()[:3]
             if model_tokens:
-                candidates.append(" ".join(model_tokens))
+                add_candidate(" ".join(model_tokens))
         
         # 4. 브랜드만
         if brand:
-            candidates.append(brand)
+            add_candidate(brand)
         
-        # 5. 대체 검색어 (특정 키워드 최소 변형)
-        # NOTE: 이 로직은 '검색 후보 생성'에 한정합니다(정규화 SRP와 분리).
+        # 5. 대체 검색어
         substitutions: dict[str, list[str]] = {
             "맥북": ["MacBook", "MacBook Air", "Mac"],
             "아이폰": ["iPhone"],
@@ -99,20 +94,14 @@ class DanawaSearchHelper:
             "애플워치": ["Apple Watch"],
             "갤럭시": ["Galaxy"],
         }
+        product_lower = product_name.lower()
         for kr_term, en_terms in substitutions.items():
             if kr_term in product_name or kr_term.lower() in product_lower:
-                candidates.extend(en_terms)
+                for en in en_terms:
+                    add_candidate(en)
         
         # 중복 제거 (순서 유지)
-        deduped = []
-        seen = set()
-        for c in candidates:
-            c = c.strip()
-            if c and c not in seen:
-                seen.add(c)
-                deduped.append(c)
-        
-        return deduped if deduped else [clean_product_name(product_name)]
+        return candidates if candidates else [clean_product_name(product_name)]
     
     def get_smart_search_query(self, product_name: str) -> str:
         """가장 효율적인 검색어 반환 (우선순위: 정규화 → 브랜드+모델 → 모델)"""

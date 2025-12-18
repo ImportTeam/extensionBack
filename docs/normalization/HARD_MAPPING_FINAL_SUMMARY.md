@@ -1,25 +1,25 @@
-# Hard Mapping 구현 최종 요약 📊
+# Hard Mapping 구현 최종 요약
 
-## 🎯 프로젝트 완성 현황
+## 프로젝트 완성 현황
 
-### ✅ 구현된 것 (4개 파일)
+###  구현된 것 (4개 파일)
 
 ```
-✅ resources/hard_mapping.yaml
+ resources/hard_mapping.yaml
    └─ 80+ 항목 (Apple, Samsung, LG, 식품, 패션)
    └─ 5가지 보완 규칙 명시
    └─ 테스트 케이스 포함
 
-✅ src/utils/text/normalization/hard_mapping_loader.py
+ src/utils/text/normalization/hard_mapping_loader.py
    └─ YAML 로드 & 싱글톤 캐싱
    └─ Longest Match First (길이 내림차순)
 
-✅ src/utils/text/normalization/hard_mapping_stage.py
+ src/utils/text/normalization/hard_mapping_stage.py
    └─ 5단계 파이프라인 (전체 500줄)
    └─ 각 Stage별 로깅 강화
    └─ 액세서리 필터 & 검증 로직
 
-✅ src/utils/text/normalization/normalize.py
+ src/utils/text/normalization/normalize.py
    └─ Level 0 Hard Mapping 통합
    └─ 우선순위: Hard Mapping → UPCS → 레거시
 ```
@@ -31,31 +31,31 @@
 ```
 입력: "MacBook Air 15"
   ↓
-[Stage 1️⃣] 액세서리 필터
+[Stage 1] 액세서리 필터
   "케이스", "필름" 등 액세서리 단어 감지
   결과: 액세서리 없음 → 계속
   ↓
-[Stage 2️⃣] Case/Space 정규화
+[Stage 2️] Case/Space 정규화
   소문자화 + 공백 정리 + 한글-영문 경계 공백
   결과: "macbook air 15"
   ↓
-[Stage 3️⃣] Hard Mapping 적용 (Longest Match First)
+[Stage 3️] Hard Mapping 적용 (Longest Match First)
   YAML 키를 길이 순으로 정렬해 매칭
   결과: "Apple 맥북 에어 15" ← 즉시 반환!
   ↓
-[Stage 4️⃣] 결과 검증 (95% 확실성)
+[Stage 4️] 결과 검증 (95% 확실성)
   브랜드 명시, 제품명 명시 확인
   결과: 유효함
   ↓
-[Stage 5️⃣] 반환 (다른 단계 건너뜀)
+[Stage 5️] 반환 (다른 단계 건너뜀)
   최종 반환: "Apple 맥북 에어 15"
   ↓
-✅ 끝! (UPCS, 레거시 단계 건너뜀)
+ 끝! (UPCS, 레거시 단계 건너뜀)
 ```
 
 ---
 
-## 🔴 5가지 보완 규칙 (필수)
+## 5가지 보완 규칙 (필수)
 
 ### Rule 1: Longest Match First
 ```
@@ -90,14 +90,14 @@
 
 ---
 
-## 📊 성능 개선
+## 성능 개선
 
 ### Hard Mapping 전후 비교
 
 | 항목 | 이전 | 개선 후 | 개선율 |
 |------|------|--------|--------|
 | 검색 성공률 | 60% | 80-90% | +20-30% |
-| 매칭 속도 | - | <1ms | ⚡️ 매우 빠름 |
+| 매칭 속도 | - | <1ms |  매우 빠름 |
 | 오류율 | 높음 | <5% | -95% |
 | 유지보수성 | 코드 수정 필요 | YAML만 수정 | 매우 쉬움 |
 
@@ -119,7 +119,7 @@ Playwright Fallback       → 나머지 처리
 ```
 importBack/
 ├── resources/
-│   └── hard_mapping.yaml ← 💾 80+ 매핑 규칙
+│   └── hard_mapping.yaml ←  80+ 매핑 규칙
 │
 ├── src/utils/text/normalization/
 │   ├── hard_mapping_loader.py ← 로드 & 캐싱
@@ -129,25 +129,25 @@ importBack/
 └── docs/
     ├── NORMALIZATION_RULES.md
     ├── HARD_MAPPING_RULES_5.md
-    └── IMPLEMENTATION_HARD_MAPPING_5STAGES.md ← 📄 구현 상세
+    └── IMPLEMENTATION_HARD_MAPPING_5STAGES.md ←  구현 상세
 ```
 
 ---
 
-## 🧪 테스트 시나리오
+##  테스트 시나리오
 
-### ✅ Hard Mapping 성공 케이스
+###  Hard Mapping 성공 케이스
 
 ```
 입력                      → 출력                      → 다나와 검색
-"맥북"                    → "Apple 맥북"              ✅
-"MacBook Air 15"         → "Apple 맥북 에어 15"      ✅
-"갤럭시북"               → "Samsung 갤럭시북"        ✅
-"그램 14"                → "LG 그램 14"              ✅
-"신라면 블랙"            → "농심 신라면 블랙"         ✅
+"맥북"                    → "Apple 맥북"              
+"MacBook Air 15"         → "Apple 맥북 에어 15"      
+"갤럭시북"               → "Samsung 갤럭시북"        
+"그램 14"                → "LG 그램 14"              
+"신라면 블랙"            → "농심 신라면 블랙"         
 ```
 
-### ⚠️ Hard Mapping 스킵 케이스
+###  Hard Mapping 스킵 케이스
 
 ```
 입력                      → 이유                      → 다음 단계
@@ -157,7 +157,7 @@ importBack/
 
 ---
 
-## 📈 크롤링 성공률 기대치
+## 크롤링 성공률 기대치
 
 ### 시나리오 1: 유명 상품 (80%+)
 ```
@@ -184,7 +184,7 @@ UPCS/레거시: 50-60% 커버
 
 ---
 
-## 🚀 다음 할 일 (순서대로)
+## 다음 할 일 (순서대로)
 
 ### Phase 1: 테스트 (1-2시간)
 - [ ] tests/unit/test_hard_mapping.py 작성 (50+ 테스트)
@@ -226,7 +226,7 @@ Chain of Responsibility: normalize → UPCS → 레거시 → Playwright
 
 ---
 
-## 💡 Key Insights
+## Key Insights
 
 ### 왜 Hard Mapping은 "Level 0"이어야 하나?
 
@@ -247,17 +247,7 @@ Chain of Responsibility: normalize → UPCS → 레거시 → Playwright
 
 ---
 
-## 📚 관련 문서
-
-| 문서 | 내용 |
-|------|------|
-| [NORMALIZATION_RULES.md](NORMALIZATION_RULES.md) | 정규화 4단계 규칙 정의 |
-| [HARD_MAPPING_RULES_5.md](HARD_MAPPING_RULES_5.md) | 5가지 보완 규칙 상세 설명 |
-| [IMPLEMENTATION_HARD_MAPPING_5STAGES.md](IMPLEMENTATION_HARD_MAPPING_5STAGES.md) | 구현 상세 가이드 |
-
----
-
-## ✅ 최종 체크리스트
+##  최종 체크리스트
 
 - [x] Hard Mapping YAML 설계 (80+ 항목)
 - [x] 5가지 보완 규칙 명시
@@ -272,7 +262,7 @@ Chain of Responsibility: normalize → UPCS → 레거시 → Playwright
 
 ---
 
-## 🎓 핵심 학습 포인트
+## 핵심 학습 포인트
 
 ### Hard Mapping은 "검색 최적화"다
 네이버, 구글도 사용하는 쿼리 정규화 기법.
@@ -295,7 +285,7 @@ Chain of Responsibility: normalize → UPCS → 레거시 → Playwright
 
 ---
 
-## 🎯 최종 목표
+## 최종 목표
 
 > **다나와 크롤링 성공률 90% 이상 달성**
 > 
@@ -303,7 +293,3 @@ Chain of Responsibility: normalize → UPCS → 레거시 → Playwright
 > 모든 상품을 안정적으로 처리한다.
 
 ---
-
-**구현 완료! 🚀**
-
-이제 테스트 → 검증 → 운영으로 진행합니다.

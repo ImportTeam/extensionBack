@@ -11,7 +11,7 @@ product_name: String
       ↓
 PriceSearchService.search_price()
       ↓
-normalize_search_query(product_name)  ← ⭐ 여기서 정규화
+normalize_search_query(product_name)  ← 여기서 정규화
       ↓
 search_key = clean_product_name(normalized_name)  ← 캐시 키 생성
       ↓
@@ -35,7 +35,7 @@ src/utils/text/
 │   ├── tokenize.py                      # 토큰화
 │
 ├── normalization/
-│   ├── normalize.py                     # 메인 정규화 ⭐
+│   ├── normalize.py                     # 메인 정규화
 │   ├── kiwi.py                          # 형태소 분석 (선택)
 │   ├── resources.py                     # UPCS 기반 (deprecated)
 │
@@ -57,12 +57,12 @@ src/utils/text/
 ```python
 normalize_search_query(text)
     ↓
-1️⃣ UPCS 기반 정규화 시도
+1️ UPCS 기반 정규화 시도
     └─ normalize_query(text, vendor="danawa")
     
     ↓ (실패 시)
     
-2️⃣ 레거시 휴리스틱 정규화 (_normalize_search_query_legacy)
+2️ 레거시 휴리스틱 정규화 (_normalize_search_query_legacy)
     ↓
     [Step 1] IT/비IT 상품 분류
     └─ is_likely_it_query(text) → IT 신호 스코링
@@ -107,12 +107,12 @@ normalize_search_query(text)
 
 ---
 
-## 4️⃣ 현재 시스템의 문제점
+## 4️ 현재 시스템의 문제점
 
 ### ❌ Problem 1: 모든 상품에 일률적 정규화
 ```
 상황:
-- IT 상품: "에어팟 프로 2세대" 정규화 ✅ 좋음
+- IT 상품: "에어팟 프로 2세대" 정규화  좋음
 - 식품: "농심 신라면 블랙" → "신라면" (색상 제거 되서 오류)
 - 패션: "나이키 검은색 러닝화" → "나이키" (너무 많이 제거)
 ```
@@ -178,7 +178,7 @@ normalize_search_query(text)
 | 파일 | 역할 | 상태 |
 |------|------|------|
 | `normalize.py` | 메인 정규화 로직 | ⚠️ IT/비IT 분류에만 의존 |
-| `clean_product_name()` | 기본 정제 | ✅ 기본 정상 |
+| `clean_product_name()` | 기본 정제 |  기본 정상 |
 | `DanawaSearchHelper.generate_search_candidates()` | Fallback 쿼리 생성 | 🔄 개선 필요 |
 | `resources/hard_mapping.json` | 브랜드 강제 매핑 | ❌ 존재하지 않음 |
 | `resources/mappings/synonyms.global.yaml` | 동의어 사전 | ❌ 사용 안 됨 |
@@ -245,25 +245,25 @@ normalize_search_query(text)
 입력:
 화이트케이스 Apple 에어팟 프로 2세대 블루투스 이어폰
 
-1️⃣ Hard Mapping 확인
+1️ Hard Mapping 확인
    없음 (이미 "에어팟"이 명시됨)
 
-2️⃣ 정규화 (기존)
+2️ 정규화 (기존)
    → "Apple 에어팟 프로 2"
 
-3️⃣ Fallback 쿼리 생성 (신규)
+3️ Fallback 쿼리 생성 (신규)
    쿼리 1: "Apple 에어팟 프로 2"
    쿼리 2: "에어팟 프로 2"
    쿼리 3: "Apple 에어팟"
    쿼리 4: "에어팟"
 
-4️⃣ 다나와 검색 시도
-   ✅ 쿼리 1에서 검색 성공!
+4️ 다나와 검색 시도
+    쿼리 1에서 검색 성공!
 ```
 
 ---
 
-## 9️⃣ 실제 구현 계획
+## 9️ 실제 구현 계획
 
 ### 파일 수정 대상
 
@@ -286,7 +286,7 @@ normalize_search_query(text)
 
 ---
 
-## 🔟 마일스톤
+## 10. 마일스톤
 
 | Phase | 구현 | 목표율 | 시간 |
 |-------|------|--------|------|
@@ -296,12 +296,3 @@ normalize_search_query(text)
 | 4 | 테스트 & 검증 | - | 2시간 |
 
 ---
-
-## 💡 다음 스텝
-
-1. `resources/hard_mapping.json` 생성 및 로드 로직 작성
-2. `normalize.py` 개선 (hard_mapping + synonym 적용)
-3. `search_optimizer.py` fallback 쿼리 확장
-4. 통합 테스트 & 실시간 크롤링 성공률 검증
-
-준비됐습니다! 👍

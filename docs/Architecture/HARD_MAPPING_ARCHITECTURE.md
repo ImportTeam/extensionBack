@@ -68,20 +68,20 @@ def normalize_for_hard_mapping_match(text: str) -> str:
     if not text:
         return ""
     
-    # 1️⃣ 소문자
+    # 1️ 소문자
     normalized = text.lower()
     
-    # 2️⃣ 공백 정규화
+    # 2️ 공백 정규화
     normalized = re.sub(r'\s+', ' ', normalized).strip()
     
-    # 3️⃣ 한글-영문 경계 공백
+    # 3️ 한글-영문 경계 공백
     normalized = re.sub(r'(?<=[\uAC00-\uD7A3])(?=[A-Za-z])', ' ', normalized)
     normalized = re.sub(r'(?<=[A-Za-z])(?=[\uAC00-\uD7A3])', ' ', normalized)
     
-    # 4️⃣ 특수문자 제거 (하이픈, 언더스코어 보존)
+    # 4️ 특수문자 제거 (하이픈, 언더스코어 보존)
     normalized = re.sub(r'[^\w\s\-_가-힣]', '', normalized)
     
-    # 5️⃣ 공백 재정리
+    # 5️ 공백 재정리
     normalized = re.sub(r'\s+', ' ', normalized).strip()
     
     return normalized
@@ -107,7 +107,7 @@ def load_hard_mapping() -> Dict[str, str]:
     return normalized_mapping
 ```
 
-### 3️⃣ Hard Mapping Stage 2 - 일관된 정규화
+### 3️ Hard Mapping Stage 2 - 일관된 정규화
 
 **파일**: `src/utils/text/normalization/hard_mapping_stage.py`
 
@@ -124,7 +124,7 @@ def stage_2_normalize_for_matching(text: str) -> str:
     return normalized
 ```
 
-### 4️⃣ Hard Mapping Stage 3 - 완전 매칭
+### 4️ Hard Mapping Stage 3 - 완전 매칭
 
 **파일**: `src/utils/text/normalization/hard_mapping_stage.py`
 

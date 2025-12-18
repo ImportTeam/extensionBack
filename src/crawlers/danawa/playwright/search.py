@@ -18,6 +18,7 @@ async def search_product(
     search_query: str,
     *,
     overall_timeout_s: Optional[float] = None,
+    candidates: Optional[list[str]] = None,
 ) -> Optional[str]:
     """
     검색 페이지에서 상품 코드 추출 (계층적 폴백 검색)
@@ -26,6 +27,7 @@ async def search_product(
         create_page: 설정 완료된 Page를 생성하는 async factory
         search_url_base: 검색 base URL (예: https://search.danawa.com/dsearch.php)
         search_query: 검색 쿼리
+        candidates: 미리 생성된 검색 후보 리스트 (없으면 생성)
 
     Returns:
         상품 코드(pcode) 또는 None
@@ -36,8 +38,9 @@ async def search_product(
 
     try:
         # 스마트 검색 후보 생성 (계층적 폴백)
-        helper = DanawaSearchHelper()
-        candidates = helper.generate_search_candidates(search_query)
+        if not candidates:
+            helper = DanawaSearchHelper()
+            candidates = helper.generate_search_candidates(search_query)
 
         logger.debug(f"Search candidates (smart): {candidates}")
 
@@ -91,12 +94,12 @@ async def search_product(
             except Exception:
                 continue
 
-        # 너무 낮은 점수면(검색 결과가 엉뚱함) 첫 번째 결과로 폴백
-        if best_href and best_score >= 60.0:
+        # 🔴 기가차드 수정: 너무 낮은 점수면(검색 결과가 엉뚱함) 결과 없음 처리 (오매핑 방지)
+        if best_href and best_score >= 45.0:
             href = best_href
         else:
-            first_product = await page.query_selector('.prod_item .prod_name a[href*="pcode="]')
-            href = await first_product.get_attribute('href') if first_product else best_href
+            logger.warning(f"[PLAYWRIGHT] No candidate matched query '{search_query}' with sufficient score (best: {best_score:.1f})")
+            return None
 
         if not href or 'pcode=' not in href:
             return None

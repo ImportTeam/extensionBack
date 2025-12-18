@@ -55,18 +55,22 @@ def normalize_href(href: str, base_url: str = "https://prod.danawa.com") -> str:
     - "//host/path" -> "https://host/path"
     - "/path" -> "{base_url}/path"
     - "http(s)://..." -> 그대로
+    - "javascript:..." -> ""
     """
     if not href:
         return ""
 
     h = href.strip()
-    if not h:
+    if not h or h.startswith("javascript:"):
         return ""
 
     if h.startswith("//"):
         return f"https:{h}"
 
     if h.startswith("/"):
+        # 다나와 브릿지 링크 등은 prod.danawa.com 기준
+        if h.startswith("/bridge/"):
+            return f"https://prod.danawa.com{h}"
         return f"{base_url}{h}"
 
     return h

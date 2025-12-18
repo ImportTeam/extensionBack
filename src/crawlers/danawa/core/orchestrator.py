@@ -89,6 +89,11 @@ async def search_lowest_price(
     cleaned_name = clean_product_name(product_name)  # 순수 정제만
     logger.info(f"[CRAWL] Starting search: {product_name} (HTTP: 10s, PW: 15s)")
 
+    # 🔴 기가차드 수정: 검색 후보를 미리 생성하여 HTTP와 Playwright에서 공유 (중복 분석 방지)
+    from src.utils.search import DanawaSearchHelper
+    helper = DanawaSearchHelper()
+    candidates = helper.generate_search_candidates(product_name)
+
     page = None
     try:
         # 0) Fast Path (HTTP) - pcode가 없는 경우에만 수행
@@ -100,10 +105,6 @@ async def search_lowest_price(
                         logger.warning(f"[HTTP-FASTPATH] ⏩ Skipping HTTP for broad/short query: '{product_name}'")
                     else:
                         logger.info(f"[HTTP-FASTPATH] Phase 1 - Attempting curl-based HTTP search (timeout: 10s)")
-                        from src.utils.search import DanawaSearchHelper
-
-                        helper = DanawaSearchHelper()
-                        candidates = helper.generate_search_candidates(product_name)
                         
                         # HTTP 페이즈 시작
                         timeout_mgr.start_phase()
@@ -150,81 +151,80 @@ async def search_lowest_price(
         timeout_mgr.start_phase()
         logger.info(f"[PLAYWRIGHT] Phase 2 - Fallback to Playwright (Budget: 15s)")
 
-        # 1단계: 검색 페이지에서 상품 찾기 (이미 코드가 주어지면 스킵)
-        if not product_code:
-            playwright_search_timeout = 8.0 # 검색에 최대 8초
+        # 1단계: 검색 페이지에서 상품 찾기
+        # 💡 기가차드 수정: product_code가 있어도 나중에 실패하면 검색으로 폴백할 수 있도록 구조 변경
+        async def _get_pcode_via_search():
+            playwright_search_timeout = 8.0
             sem_timeout = 10.0
             acquired = await crawler._acquire_browser_semaphore_with_timeout(sem_timeout)
             if not acquired:
                 raise ProductNotFoundException(f"Concurrency busy for: {product_name}")
             try:
                 logger.debug(f"[PLAYWRIGHT] Phase 2-A - Launching browser search (timeout: {playwright_search_timeout}s)")
-                product_code = await asyncio.wait_for(
+                pcode = await asyncio.wait_for(
                     search_product(
                         crawler._create_page,
                         crawler.search_url,
                         product_name,
                         overall_timeout_s=playwright_search_timeout,
+                        candidates=candidates, # 🔴 공유된 후보 사용
                     ),
                     timeout=playwright_search_timeout + 2.0,
                 )
-                logger.info(f"[PLAYWRIGHT] Phase 2-A ✅ Found product pcode: {product_code}")
-                cb.metrics.record_playwright_hit()
+                if pcode:
+                    logger.info(f"[PLAYWRIGHT] Phase 2-A ✅ Found product pcode: {pcode}")
+                    cb.metrics.record_playwright_hit()
+                return pcode
             except asyncio.TimeoutError:
-                logger.error(f"[PLAYWRIGHT] Phase 2-A ❌ Search timeout after {playwright_search_timeout}s")
+                logger.error(f"[PLAYWRIGHT] Phase 2-A ❌ Search timeout")
                 cb.metrics.record_playwright_failure()
-                raise
+                return None
             finally:
                 crawler._release_browser_semaphore()
+
+        if not product_code:
+            product_code = await _get_pcode_via_search()
 
         if not product_code:
             raise ProductNotFoundException(f"No products found for: {product_name}")
 
         # 2단계: 상품 상세 페이지에서 최저가 추출
-        await crawler._rate_limit()
-        
-        # 남은 Playwright 예산 확인
-        remaining_pw_s = timeout_mgr.phase_remaining_ms_playwright / 1000.0
-        if remaining_pw_s < 2.0:
-            raise asyncio.TimeoutError("insufficient_budget_for_playwright_detail")
-        
-        playwright_detail_timeout = min(10.0, remaining_pw_s) # 상세 페이지에 최대 10초
-        sem_timeout = playwright_detail_timeout + 2.0
-        acquired = await crawler._acquire_browser_semaphore_with_timeout(sem_timeout)
-        if not acquired:
-            raise CrawlerException(f"Playwright concurrency busy for: {product_name}")
-        try:
-            page = await crawler._create_page()
-            # Playwright 내부 selector timeout은 충분히 확보
+        async def _fetch_detail(pcode: str) -> Optional[dict]:
+            await crawler._rate_limit()
+            remaining_pw_s = timeout_mgr.phase_remaining_ms_playwright / 1000.0
+            if remaining_pw_s < 2.0:
+                return None
+            
+            playwright_detail_timeout = min(10.0, remaining_pw_s)
+            sem_timeout = playwright_detail_timeout + 2.0
+            acquired = await crawler._acquire_browser_semaphore_with_timeout(sem_timeout)
+            if not acquired:
+                return None
             try:
-                page.set_default_timeout(10000)
-            except Exception:
-                pass
-            logger.debug(f"[PLAYWRIGHT] Phase 2-B - Fetching product details (timeout: {playwright_detail_timeout}s)")
-            result = await asyncio.wait_for(
-                get_product_lowest_price(page, crawler.product_url, product_code, cleaned_name),
-                timeout=playwright_detail_timeout + 2.0,
-            )
-            if result:
-                logger.info(
-                    f"[PLAYWRIGHT] Phase 2-B ✅ SUCCESS (Total PW elapsed: {timeout_mgr.phase_elapsed_ms}ms)"
+                page = await crawler._create_page()
+                try:
+                    page.set_default_timeout(10000)
+                except Exception:
+                    pass
+                logger.debug(f"[PLAYWRIGHT] Phase 2-B - Fetching details for pcode={pcode}")
+                return await asyncio.wait_for(
+                    get_product_lowest_price(page, crawler.product_url, pcode, cleaned_name),
+                    timeout=playwright_detail_timeout + 2.0,
                 )
-                cb.metrics.record_playwright_hit()
-            else:
-                logger.error(f"[PLAYWRIGHT] Phase 2-B ❌ No price data returned")
-                cb.metrics.record_playwright_failure()
-        except asyncio.TimeoutError:
-            logger.error(f"[PLAYWRIGHT] Phase 2-B ❌ Detail page timeout")
-            cb.metrics.record_playwright_failure()
-            raise
-        except Exception as e:
-            logger.error(
-                f"[PLAYWRIGHT] Phase 2-B ❌ Detail page error: {type(e).__name__}: {repr(e)[:100]}"
-            )
-            cb.metrics.record_playwright_failure()
-            raise
-        finally:
-            crawler._release_browser_semaphore()
+            except Exception as e:
+                logger.error(f"[PLAYWRIGHT] Phase 2-B ❌ Detail error for {pcode}: {e}")
+                return None
+            finally:
+                crawler._release_browser_semaphore()
+
+        result = await _fetch_detail(product_code)
+        
+        # 💡 기가차드 수정: 만약 제공된 pcode가 mismatch 등으로 실패했다면, 검색을 통해 다시 시도
+        if not result and product_name:
+            logger.warning(f"[PLAYWRIGHT] Provided pcode {product_code} failed. Retrying via search...")
+            new_pcode = await _get_pcode_via_search()
+            if new_pcode and new_pcode != product_code:
+                result = await _fetch_detail(new_pcode)
 
         if not result:
             raise ProductNotFoundException(f"No price information for: {product_name}")
