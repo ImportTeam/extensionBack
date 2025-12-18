@@ -2,6 +2,9 @@
 
 from __future__ import annotations
 
+from datetime import datetime
+from unittest.mock import AsyncMock, MagicMock, patch
+
 import pytest
 
 from src.engine.cache_adapter import CacheAdapter
@@ -14,77 +17,85 @@ def cache_adapter():
     return CacheAdapter()
 
 
-def test_cache_adapter_to_dict():
-    """CachedPrice → dict 변환."""
-    from datetime import datetime
-    
+@pytest.mark.asyncio
+async def test_cache_adapter_get_hit():
+    """캐시 히트 케이스."""
+    mock_cache_service = MagicMock()
     cached = CachedPrice(
-        product_name="다나와 모니터",
+        product_name="캐시된 상품",
         lowest_price=45000,
         product_url="https://example.com/product",
         source="cache",
         updated_at=datetime.now().isoformat(),
     )
+    mock_cache_service.get = MagicMock(return_value=cached)
     
-    adapter = CacheAdapter()
-    result = adapter.to_dict(cached)
+    adapter = CacheAdapter(cache_service=mock_cache_service)
+    result = await adapter.get("캐시된 상품")
     
+    assert result is not None
     assert isinstance(result, dict)
-    assert result["lowest_price"] == 45000
     assert result["product_url"] == "https://example.com/product"
-    assert result["source"] == "cache"
+    assert result["price"] == 45000
 
 
-def test_cache_adapter_from_dict():
-    """dict → CachedPrice 변환."""
-    from datetime import datetime
+@pytest.mark.asyncio
+async def test_cache_adapter_get_miss():
+    """캐시 미스 케이스."""
+    mock_cache_service = MagicMock()
+    mock_cache_service.get = MagicMock(return_value=None)
+    
+    adapter = CacheAdapter(cache_service=mock_cache_service)
+    result = await adapter.get("없는 상품")
+    
+    assert result is None
+
+
+@pytest.mark.asyncio
+async def test_cache_adapter_set():
+    """캐시 저장."""
+    mock_cache_service = MagicMock()
+    mock_cache_service.set = MagicMock(return_value=True)
+    
+    adapter = CacheAdapter(cache_service=mock_cache_service)
     
     data = {
-        "product_name": "검색 상품",
-        "lowest_price": 48000,
-        "product_url": "https://example.com/item",
-        "source": "fastpath",
-        "updated_at": datetime.now().isoformat(),
+        "product_url": "https://example.com/product",
+        "price": 50000,
+        "product_name": "테스트 상품",
     }
     
-    adapter = CacheAdapter()
-    cached = adapter.from_dict(data)
+    result = await adapter.set("테스트 상품", data, ttl=3600)
     
-    assert isinstance(cached, CachedPrice)
-    assert cached.lowest_price == 48000
-    assert cached.product_url == "https://example.com/item"
-    assert cached.source == "fastpath"
+    # set은 None 반환
+    assert result is None
+    mock_cache_service.set.assert_called_once()
 
 
-def test_cache_adapter_round_trip():
-    from datetime import datetime
-    
-    original = CachedPrice(
-        product_name="왕복 테스트",
-        lowest_price=50000,
-        product_url="https://example.com/roundtrip",
-        source="slowpath",
+def test_cached_price_schema():
+    """CachedPrice Pydantic 모델 검증."""
+    cached = CachedPrice(
+        product_name="캐시 테스트",
+        lowest_price=42000,
+        product_url="https://example.com/product",
+        source="cache",
         updated_at=datetime.now().isoformat(),
     )
     
-    adapter = CacheAdapter()
+    # JSON 직렬화 가능성
+    json_str = cached.model_dump_json()
+    assert isinstance(json_str, str)
+    assert "42000" in json_str
+    assert "product_url" in json_str
     
-    # CachedPrice → dict
-    dict_data = adapter.to_dict(original)
-    
-    # dict → CachedPrice
-    restored = adapter.from_dict(dict_data)
-    
-    assert restored.lowest_price == original.lowest_price
-    assert restored.product_url == original.product_url
-    assert restored.product_name == original.product_nam
-    assert restored.product_code == original.product_code
-    assert restored.source == original.source
+    # dict 변환
+    dict_data = cached.model_dump()
+    assert dict_data["lowest_price"] == 42000
+    assert dict_data["source"] == "cache"
 
 
-def test_cache_adapter_attribute_names():
-    from datetime import datetime
-    
+def test_cached_price_attribute_names():
+    """CachedPrice 속성명 일관성."""
     cached = CachedPrice(
         product_name="테스트",
         lowest_price=45000,
@@ -99,30 +110,6 @@ def test_cache_adapter_attribute_names():
     assert hasattr(cached, "product_name")
     
     # 구식 속성명이 없어야 함
-    # 구식 속성명이 없어야 함 (url 대신 product_url)
     assert not hasattr(cached, "url")
     assert not hasattr(cached, "price")
 
-from datetime import datetime
-    
-    cached = CachedPrice(
-        product_name="캐시 테스트",
-        lowest_price=42000,
-        product_url="https://example.com/product",
-        source="cache",
-        updated_at=datetime.now().isoformat()ttps://example.com/product",
-        product_code="K11111111",
-        currency="KRW",
-        source="cache",
-    )
-    
-    # JSON 직렬화 가능성
-    json_str = cached.model_dump_json()
-    assert isinstance(json_str, str)
-    assert "42000" in json_str
-    assert "product_url" in json_str
-    
-    # dict 변환
-    dict_data = cached.model_dump()
-    assert dict_data["lowest_price"] == 42000
-    assert dict_data["source"] == "cache"

@@ -65,16 +65,20 @@ class CacheAdapter:
         Args:
             query: 검색어
             data: 저장할 데이터
-                - product_url or url: 상품 URL
+                - product_url: 상품 URL
                 - price: 가격
+                - product_name: 상품명
             ttl: TTL (초)
         """
         try:
-            # dict -> CacheService 형식 변환
+            # dict를 CacheService.set() 형식으로 변환
+            # CacheService.set()은 동기이고 dict를 받음
             price_data = {
-                "url": data.get("product_url") or data.get("url"),
+                "product_url": data.get("product_url"),
                 "price": data.get("price"),
+                "product_name": data.get("product_name"),
             }
+            # CacheService는 동기이므로 직접 호출
             self.cache_service.set(query, price_data)
         except Exception as e:
             logger.warning(f"Cache set failed: {e}")
