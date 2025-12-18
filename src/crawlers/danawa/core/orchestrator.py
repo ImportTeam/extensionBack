@@ -93,6 +93,12 @@ async def search_lowest_price(
     from src.utils.search import DanawaSearchHelper
     helper = DanawaSearchHelper()
     candidates = helper.generate_search_candidates(product_name)
+    logger.info(f"[CRAWL] Using search candidates: {candidates}")
+
+    # 실제 크롤링(검색/검증)에 사용할 대표 쿼리.
+    # 연도(2025) 같은 토큰이 다나와 상품명에 없을 수 있어,
+    # 후보 1번(보통 연도 제거 버전)을 primary로 삼아 점수화/검증 일관성을 유지합니다.
+    primary_query = candidates[0] if candidates else product_name
 
     page = None
     try:
@@ -110,7 +116,7 @@ async def search_lowest_price(
                         timeout_mgr.start_phase()
                         fast = await asyncio.wait_for(
                             crawler._http.search_lowest_price(
-                                query=product_name,
+                                query=primary_query,
                                 candidates=candidates,
                                 total_timeout_ms=10000, # 10s
                             ),
@@ -154,7 +160,11 @@ async def search_lowest_price(
         # 1단계: 검색 페이지에서 상품 찾기
         # 💡 기가차드 수정: product_code가 있어도 나중에 실패하면 검색으로 폴백할 수 있도록 구조 변경
         async def _get_pcode_via_search():
-            playwright_search_timeout = 8.0
+            # 이전 8초는 다나와 검색 페이지에 너무 짧아 goto timeout(6s)로 실패가 잦았습니다.
+            # Playwright 전체 예산(15s) 내에서 검색에 더 많은 시간을 배정합니다.
+            remaining_pw_s = timeout_mgr.phase_remaining_ms_playwright / 1000.0
+            # 검색은 최소 12초, 최대 14초까지 (남은 예산 내)
+            playwright_search_timeout = max(12.0, min(14.0, remaining_pw_s))
             sem_timeout = 10.0
             acquired = await crawler._acquire_browser_semaphore_with_timeout(sem_timeout)
             if not acquired:
@@ -165,7 +175,7 @@ async def search_lowest_price(
                     search_product(
                         crawler._create_page,
                         crawler.search_url,
-                        product_name,
+                        primary_query,
                         overall_timeout_s=playwright_search_timeout,
                         candidates=candidates, # 🔴 공유된 후보 사용
                     ),

@@ -12,6 +12,7 @@ from typing import Optional, List, Dict
 from selectolax.parser import HTMLParser
 
 from src.core.config import settings
+from src.core.logging import logger
 from src.utils.text import extract_price_from_text, weighted_match_score
 from src.utils.url import normalize_href
 
@@ -168,7 +169,26 @@ def parse_search_pcandidates(html: str, query: str, max_candidates: int = 12) ->
         scored.append((score, pcode))
 
     scored.sort(key=lambda t: t[0], reverse=True)
-    return [p for _, p in scored[:max_candidates]]
+
+    if scored:
+        return [p for _, p in scored[:max_candidates]]
+
+    # 폴백: 구조 변경/동적 링크로 selector가 실패했을 때를 대비해
+    # HTML에서 직접 pcode/prod_id를 추출합니다.
+    # (상세 페이지에서 다시 검증하므로 여기서는 후보를 넉넉히 확보하는 것이 이득)
+    pcodes = re.findall(r"(?:pcode|prod_id)=(\d{5,})", html)
+    if not pcodes:
+        return []
+
+    uniq: List[str] = []
+    seen: set[str] = set()
+    for p in pcodes:
+        if p not in seen:
+            seen.add(p)
+            uniq.append(p)
+        if len(uniq) >= max_candidates:
+            break
+    return uniq
 
 
 _TITLE_NOISE_PATTERNS = (
@@ -223,7 +243,10 @@ def parse_product_lowest_price(html: str, fallback_name: str, product_url: str) 
     # 🔴 기가차드 수정: 상품명 검증 (HTTP FastPath 오매핑 방어)
     # 검증은 모델 코드가 포함된 raw_title로 수행해야 정확합니다.
     from src.utils.text.matching.matching import weighted_match_score
-    match_score = weighted_match_score(fallback_name, raw_title)
+    # 다나와 타이틀에는 UI 텍스트가 섞이는 경우가 있어(줄바꿈/VS검색하기 등)
+    # 검증 점수는 노이즈를 제거한 텍스트로 계산합니다.
+    score_title = clean_display_text(raw_title)
+    match_score = weighted_match_score(fallback_name, score_title)
     if match_score < 45.0:
         logger.error(
             f"[FAST_PATH] Product mismatch! query='{fallback_name}' vs page='{raw_title}' "

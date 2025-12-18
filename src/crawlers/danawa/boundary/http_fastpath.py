@@ -107,7 +107,7 @@ class DanawaHttpFastPath:
             search_budget_ms = max(500, total_timeout_ms - product_budget_floor_ms)
         search_deadline = loop.time() + (search_budget_ms / 1000.0)
 
-        max_candidates = 2
+        max_candidates = 3
         max_pcodes_per_candidate = 4
 
         def _is_likely_accessory(product_name: str) -> bool:
@@ -136,6 +136,13 @@ class DanawaHttpFastPath:
         per_try_ms = int(getattr(settings, "crawler_http_request_timeout_ms", getattr(settings, "crawler_http_timeout_ms", 4000)))
         
         for idx, cand in enumerate(candidates[:max_candidates]):
+            # IMPORTANT:
+            # - 각 candidate로 검색 페이지를 fetch 했다면,
+            #   결과 점수화/상세 검증도 동일한 candidate 기준으로 해야 합니다.
+            # - 그렇지 않으면 (예: 원본 query에 연도 '2025'가 포함된 경우)
+            #   점수 필터(40/45점)에 의해 pcode가 모두 탈락할 수 있습니다.
+            scoring_query = cand
+
             remaining_search_ms = int(max(0.0, (search_deadline - loop.time()) * 1000.0))
             if remaining_search_ms <= 0:
                 logger.info("[FAST_PATH] Search budget exhausted before search fetch")
@@ -157,7 +164,7 @@ class DanawaHttpFastPath:
             except Exception:
                 continue
 
-            pcodes = parse_search_pcandidates(html, query=query, max_candidates=12)
+            pcodes = parse_search_pcandidates(html, query=scoring_query, max_candidates=12)
             if not pcodes:
                 continue
 
@@ -176,7 +183,7 @@ class DanawaHttpFastPath:
                 configured_product_timeout_ms = int(getattr(settings, "crawler_http_product_timeout_ms", 6000))
                 product_timeout_ms = int(max(300, min(configured_product_timeout_ms, remaining_total_ms)))
 
-                product_url = f"{self.product_url}?pcode={pcode}&keyword={quote(query)}"
+                product_url = f"{self.product_url}?pcode={pcode}&keyword={quote(scoring_query)}"
                 product_html = await self._fetch_html(product_url, timeout_ms=product_timeout_ms)
                 if not product_html:
                     continue
@@ -188,7 +195,7 @@ class DanawaHttpFastPath:
                 except Exception:
                     continue
 
-                parsed = parse_product_lowest_price(product_html, fallback_name=query, product_url=product_url)
+                parsed = parse_product_lowest_price(product_html, fallback_name=scoring_query, product_url=product_url)
                 if not parsed:
                     continue
 

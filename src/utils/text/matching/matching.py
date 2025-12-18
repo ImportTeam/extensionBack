@@ -44,7 +44,17 @@ def weighted_match_score(query: str, candidate: str) -> float:
     if is_accessory_trap(query, candidate):
         return 0.0
 
-    base = fuzzy_score(query, candidate)
+    # 띄어쓰기/붙임 차이를 견디기 위해 공백 제거 버전도 같이 평가
+    def _nospace(s: str) -> str:
+        s = (s or "").lower()
+        s = re.sub(r"\s+", "", s)
+        s = re.sub(r"[^0-9a-zA-Z가-힣]", "", s)
+        return s
+
+    base = max(
+        fuzzy_score(query, candidate),
+        fuzzy_score(_nospace(query), _nospace(candidate)),
+    )
 
     q = extract_product_signals(query)
     c = extract_product_signals(candidate)
@@ -53,19 +63,33 @@ def weighted_match_score(query: str, candidate: str) -> float:
 
     # [핵심] 제품군(Pro/Air/Max/Mini/Ultra/FE) 불일치 - 강한 필터
     # iPad, iPhone, Galaxy 등 공통 적용
-    variants = load_matching_variants()
+    variants_data = load_matching_variants()
     q_lower = query.lower()
     c_lower = candidate.lower()
     
-    q_variant = [w for w in variants if w in q_lower]
-    c_variant = [w for w in variants if w in c_lower]
+    q_variants = set()
+    c_variants = set()
+    
+    for v_group in variants_data:
+        # v_group은 [standard, synonym1, synonym2, ...] 형태
+        if isinstance(v_group, list):
+            standard = v_group[0]
+            for synonym in v_group:
+                if synonym in q_lower:
+                    q_variants.add(standard)
+                if synonym in c_lower:
+                    c_variants.add(standard)
+        else:
+            # 하위 호환성 (단일 문자열인 경우)
+            if v_group in q_lower:
+                q_variants.add(v_group)
+            if v_group in c_lower:
+                c_variants.add(v_group)
 
-    if q_variant or c_variant:
+    if q_variants or c_variants:
         # 둘 중 하나라도 variant가 있는데 서로 다르면 (Pro vs Air, Pro vs None 등)
-        # 단, 쿼리에 없는데 후보에 있는 경우는 '범용'일 수 있으므로 감점만, 
-        # 쿼리에 있는데 후보에 없거나 다르면 강한 패널티
-        if q_variant != c_variant:
-            logger.debug(f"Variant mismatch: query={q_variant} vs candidate={c_variant}")
+        if q_variants != c_variants:
+            logger.debug(f"Variant mismatch: query={q_variants} vs candidate={c_variants}")
             score -= 45.0
 
     # [핵심] CPU/칩셋 정보 추출 및 비교 (M5 vs M3 등)

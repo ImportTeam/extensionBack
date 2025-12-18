@@ -1,14 +1,15 @@
 # 제품군(Variant) 정의 - 매칭 시 불일치 패널티 부여 대상
+# 형식: [표준명, 동의어1, 동의어2, ...]
 variants:
-  - pro
-  - air
-  - max
-  - mini
-  - ultra
-  - fe
-  - plus
-  - lite
-  - edge
-  - qled
-  - oled
-  - neo
+  - [pro, 프로]
+  - [air, 에어]
+  - [max, 맥스]
+  - [mini, 미니]
+  - [ultra, 울트라]
+  - [fe, 에프이]
+  - [plus, 플러스]
+  - [lite, 라이트]
+  - [edge, 엣지]
+  - [qled, 큐엘이디]
+  - [oled, 올레드]
+  - [neo, 네오]

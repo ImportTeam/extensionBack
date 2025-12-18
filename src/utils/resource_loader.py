@@ -30,10 +30,10 @@ def load_yaml_resource(relative_path: str) -> Dict[str, Any]:
         return {}
 
 
-def load_matching_variants() -> set[str]:
-    """제품군(Variant) 목록 로드"""
+def load_matching_variants() -> list[str | list[str]]:
+    """제품군(Variant) 목록 로드 (동의어 그룹 포함 가능)"""
     data = load_yaml_resource("matching/variants.yaml")
-    return set(data.get("variants", []))
+    return data.get("variants", [])
 
 
 def load_accessory_keywords() -> Dict[str, set[str]]:

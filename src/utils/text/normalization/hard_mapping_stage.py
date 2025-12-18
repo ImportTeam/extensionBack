@@ -124,11 +124,23 @@ class HardMappingStage:
         
         logger.debug(f"[Stage 3] Trying Hard Mapping on: '{normalized_text}'")
         
-        for key in sorted_keys:
-            if key == normalized_text or key in normalized_text:
-                result = mapping[key]
-                logger.info(f"[Stage 3] ✅ Hard Mapping matched: '{normalized_text}' → '{result}'")
-                return result
+        # 🔴 기가차드 수정: 부분 일치(substring)는 너무 위험함. 
+        # 완전 일치(Full Match)만 허용하여 오매핑 방지.
+        # 예: "맥북 에어 13" -> "Apple 맥북 에어 13" (OK)
+        # 예: "2025 맥북 에어 13 M4" -> "Apple 맥북 에어 13" (위험 - M4 정보 손실)
+        if normalized_text in mapping:
+            result = mapping[normalized_text]
+            logger.info(f"[Stage 3] ✅ Hard Mapping matched (Full): '{normalized_text}' → '{result}'")
+            return result
+        
+        # 💡 보조: 브랜드명이 빠진 경우를 위해 브랜드명을 붙여서 한 번 더 시도
+        if not normalized_text.startswith(("apple", "삼성", "lg")):
+            for brand in ["apple", "삼성", "lg"]:
+                trial = f"{brand} {normalized_text}"
+                if trial in mapping:
+                    result = mapping[trial]
+                    logger.info(f"[Stage 3] ✅ Hard Mapping matched (Brand+Full): '{trial}' → '{result}'")
+                    return result
         
         logger.debug(f"[Stage 3] ❌ No Hard Mapping match for: '{normalized_text}'")
         return None

@@ -46,6 +46,7 @@ async def search_product(
 
         # 첫 번째 후보부터 검색 시작
         found = False
+        used_query = search_query
         for idx, cand in enumerate(candidates):
             logger.debug(f"Trying search (attempt {idx+1}): {cand}")
             search_url = f"{search_url_base}?query={quote(cand)}&originalQuery={quote(cand)}"
@@ -64,6 +65,7 @@ async def search_product(
             try:
                 await page.wait_for_selector('.prod_item, a[href*="pcode="]', timeout=selector_timeout_ms)
                 found = True
+                used_query = cand
                 break
             except PlaywrightTimeoutError:
                 if idx < len(candidates) - 1:
@@ -73,7 +75,7 @@ async def search_product(
         if not found:
             return None
 
-        # 검색 결과(여러 개)에서 "원본 쿼리"와 가장 일치하는 상품을 선택
+        # 검색 결과(여러 개)에서 "실제로 사용한 쿼리(used_query)"와 가장 일치하는 상품을 선택
         href = None
         best_href = None
         best_score = 0.0
@@ -86,7 +88,7 @@ async def search_product(
         for link in links_to_score:
             try:
                 link_text = (await link.inner_text()) or (await link.get_attribute('title')) or ''
-                score = weighted_match_score(search_query, link_text)
+                score = weighted_match_score(used_query, link_text)
                 logger.debug(f"Candidate link text: {link_text[:100]} score={score}")
                 if score > best_score:
                     best_score = score
@@ -98,7 +100,7 @@ async def search_product(
         if best_href and best_score >= 45.0:
             href = best_href
         else:
-            logger.warning(f"[PLAYWRIGHT] No candidate matched query '{search_query}' with sufficient score (best: {best_score:.1f})")
+            logger.warning(f"[PLAYWRIGHT] No candidate matched query '{used_query}' with sufficient score (best: {best_score:.1f})")
             return None
 
         if not href or 'pcode=' not in href:

@@ -59,7 +59,8 @@ class Settings(BaseSettings):
 
     # FE(브라우저) 타임아웃보다 짧게 서버에서 하드 캡을 걸어
     # 요청이 매달린 채로 클라이언트에서 타임아웃되는 상황을 줄입니다.
-    api_price_search_timeout_s: float = 14.0
+    # 🔴 기가차드 수정: Playwright 폴백 고려하여 20초로 상향 (기존 14초)
+    api_price_search_timeout_s: float = 20.0
     
     # 로깅
     log_level: str = "INFO"
