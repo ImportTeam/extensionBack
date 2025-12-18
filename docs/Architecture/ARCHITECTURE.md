@@ -1,4 +1,4 @@
-# 최종 정규화 아키텍처 - 엔드투엔드
+# Extension BE 아키텍쳐
 
 ## 전체 흐름도
 
@@ -74,7 +74,7 @@
     │                                                         │
     │ 각 후보로 다나와 검색 시도                              │
     │                                                         │
-    │ ✅ 성공 → 결과 반환 & 캐시                              │
+    │  성공 → 결과 반환 & 캐시                              │
     │ ❌ 모두 실패 → 다음 레벨로                             │
     └─────────────────┬────────────────────────────────────┘
                       │
@@ -105,11 +105,11 @@
     │ │   · 키워드 겹침도 > 30%?            │                │
     │ │   · 브랜드 일치?                    │                │
     │ │                                     │                │
-    │ │   ✅ 통과 → 결과 반환 & 캐시         │                │
+    │ │    통과 → 결과 반환 & 캐시         │                │
     │ │   ❌ 실패 → 다음 후보                │                │
     │ └─────────────────────────────────────┘                │
     │                                                         │
-    │ 결과: ✅ Apple 아이폰 15 (최저가 계산)                  │
+    │ 결과:  Apple 아이폰 15 (최저가 계산)                  │
     │ 또는: ❌ ProductNotFoundException                       │
     └────────────────────────────────────────────────────────┘
 ```
@@ -118,7 +118,7 @@
 
 ## 상세 데이터 흐름
 
-### 시나리오 1: Hard Mapping 히트 ✅
+### 시나리오 1: Hard Mapping 히트 
 
 ```
 입력: "MACBOOK AIR 15"
@@ -126,14 +126,14 @@
 Level 0: Hard Mapping
   · normalize: "macbook air 15"
   · YAML key "macbook air 15" 존재
-  · ✅ 반환: "Apple 맥북 에어 15"
+  ·  반환: "Apple 맥북 에어 15"
   ↓
 ⏱️ 시간: ~1ms
 💾 캐시: 저장
 📊 성공률: 100% (확실한 케이스)
 ```
 
-### 시나리오 2: Synonym 히트 ✅
+### 시나리오 2: Synonym 히트 
 
 ```
 입력: "Apple 아이폰 17 Pro 자급제"
@@ -144,14 +144,14 @@ Level 0: Hard Mapping
 Level 1: Synonym
   · 후보: ["apple 아이폰 17 pro", "아이폰 17 pro", "iphone 17 pro"]
   · 첫 후보 검색: "apple 아이폰 17 pro"
-  · ✅ 다나와 검색 결과: Apple 아이폰 17 가격 정보
+  ·  다나와 검색 결과: Apple 아이폰 17 가격 정보
   ↓
 ⏱️ 시간: ~2-3초 (웹 검색)
 💾 캐시: 저장
 📊 성공률: 90%+ (충분한 정보 제공)
 ```
 
-### 시나리오 3: Fallback 히트 + 검증 ✅
+### 시나리오 3: Fallback 히트 + 검증 
 
 ```
 입력: "Apple 아이폰 17 Pro 자급제 화이트"
@@ -168,10 +168,10 @@ Level 2: Fallback
   · 후보 1: "apple 아이폰 17"
     검색 결과: Apple 아이폰 15 + 16 + 17
     검증:
-      · 카테고리: phone == phone ✅
-      · 키워드: 80% 겹침 ✅
-      · 브랜드: Apple == Apple ✅
-    → ✅ 통과 → 결과 반환
+      · 카테고리: phone == phone 
+      · 키워드: 80% 겹침 
+      · 브랜드: Apple == Apple 
+    →  통과 → 결과 반환
   ↓
 ⏱️ 시간: ~3-4초
 💾 캐시: 저장
@@ -190,7 +190,7 @@ Level 2: Fallback
   · 모든 후보 검색 결과 또는 검증 실패
   ↓
 🚫 ProductNotFoundException
-📊 성공률: 0% (정보 부족)
+  성공률: 0% (정보 부족)
 ```
 
 ---
@@ -216,7 +216,7 @@ Level 2: Fallback
 
 ## 구현 체크리스트
 
-### Phase 1: Hard Mapping (✅ 완료)
+### Phase 1: Hard Mapping ( 완료)
 - [x] `normalize_for_hard_mapping_match()` 정의
 - [x] Hard Mapping YAML 로더 명시화
 - [x] Stage 2,3 일관성 확보
@@ -248,25 +248,25 @@ Level 2: Fallback
 │
 ├─ Hard Mapping (Level 0)
 │  ├─ 액세서리 필터? → YES ─→ 스킵 ─┐
-│  ├─ 정규화 후 YAML 키 == 입력? → YES ─→ 반환 ✅
+│  ├─ 정규화 후 YAML 키 == 입력? → YES ─→ 반환 
 │  └─ NO ──────────┐
 │                  │
 ├─ Synonym (Level 1)
 │  ├─ 의미 확장 후보 생성
 │  ├─ 각 후보로 검색
-│  ├─ 검색 성공? → YES ─→ 반환 ✅
+│  ├─ 검색 성공? → YES ─→ 반환 
 │  └─ 모두 실패 ──→ 다음
 │
 ├─ Fallback (Level 2)
 │  ├─ 입력 분석 (카테고리/브랜드/모델)
 │  ├─ 축소된 후보 생성
 │  ├─ 각 후보로 검색
-│  ├─ 검증 Gate 통과? ──→ YES ─→ 반환 ✅
+│  ├─ 검증 Gate 통과? ──→ YES ─→ 반환 
 │  └─ 모두 실패 ─┐
 │               │
 └─ Playwright (Fallback)
    ├─ 브라우저 자동화 검색
-   ├─ 성공? ──→ YES ─→ 반환 ✅
+   ├─ 성공? ──→ YES ─→ 반환 
    └─ 실패? ──→ ProductNotFoundException ❌
 ```
 
@@ -274,7 +274,7 @@ Level 2: Fallback
 
 ## 다음 구현 순서 (권장)
 
-1. ✅ **Hard Mapping 아키텍처** - 완료
+1.  **Hard Mapping 아키텍처** - 완료
 2. ⏳ **Synonym 단계** - 다음 (YAML + Python 구현)
 3. ⏳ **Fallback 단계** - 그 다음 (검증 Gate)
 4. ⏳ **통합 테스트** - 전체 파이프라인
@@ -286,13 +286,12 @@ Level 2: Fallback
 
 | 항목 | 달성 | 상태 |
 |-----|------|------|
-| ✅ Hard Mapping 완전 매칭 | YES | 완료 |
-| ✅ 정규화 기준 명시화 | YES | 완료 |
-| ✅ Synonym 확장 전용 원칙 | YES | 설계 |
-| ✅ Fallback + 검증 Gate | YES | 설계 |
-| ✅ 오매핑 방지 안전장치 | YES | 설계 |
-| ✅ 성능 특성 정의 | YES | 문서화 |
-| ✅ 테스트 체계 | YES | 기초 |
+|  Hard Mapping 완전 매칭 | YES | 완료 |
+|  정규화 기준 명시화 | YES | 완료 |
+|  Synonym 확장 전용 원칙 | YES | 설계 |
+|  Fallback + 검증 Gate | YES | 설계 |
+|  오매핑 방지 안전장치 | YES | 설계 |
+|  성능 특성 정의 | YES | 문서화 |
+|  테스트 체계 | YES | 기초 |
 
-**👉 이 구조대로 구현하면 90%+ 성공률 + 오매핑 < 5% 보장됨**
 

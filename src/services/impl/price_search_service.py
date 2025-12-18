@@ -105,7 +105,11 @@ class PriceSearchService:
                     message="DB 캐시에서 발견했습니다.",
                 )
         
-        # 2. 크롤링 수행
+        # 1-3. 🔴 Hard Skip 확인 (3회 이상 연속 실패 → 즉시 거절)
+        if self.cache_service.should_hard_skip(search_key, max_failures=3):
+            msg = "이 상품은 반복적으로 검색 실패했습니다. (최근 3회 실패)"
+            logger.warning(f"Hard skip activated for: {search_key}")
+            return self._build_error_response(msg)
         logger.info(f"Cache miss, crawling for: {search_key}")
         
         try:
@@ -122,6 +126,8 @@ class PriceSearchService:
             
             # 3. 캐싱
             self.cache_service.set(search_key, result)
+            # 🟢 성공 → 실패 카운트 초기화
+            self.cache_service.reset_failure_count(search_key)
 
             # 3-1. DB에도 영속 캐시 저장 (선택)
             # DB에 저장된 깨끗한 product_name을 다음 요청에서 재사용할 수 있음
@@ -145,10 +151,12 @@ class PriceSearchService:
             msg = "요청 시간 초과"
             logger.warning(f"Search timeout for: {product_name}")
             self.cache_service.set_negative(search_key, msg)
+            # 🔴 실패 카운트 증가
+            fail_count = self.cache_service.increment_failure_count(search_key)
             self._record_search_failure(
                 product_name=product_name,
                 normalized_name=normalized_name,
-                error_message=msg,
+                error_message=f"{msg} (fail_count={fail_count})",
             )
             return self._build_error_response(msg)
 
@@ -156,36 +164,42 @@ class PriceSearchService:
             logger.warning(f"Product not found: {e}")
             msg = str(e)
             self.cache_service.set_negative(search_key, msg)
+            # 🔴 실패 카운트 증가
+            fail_count = self.cache_service.increment_failure_count(search_key)
             
             # 실패 기록 저장 (학습용)
             self._record_search_failure(
                 product_name=product_name,
                 normalized_name=normalized_name,
-                error_message=str(e)
+                error_message=f"{msg} (fail_count={fail_count})"
             )
             
             return self._build_error_response(msg)
         
         except CrawlerException as e:
             logger.error(f"Crawler error: {e}")
+            # 🔴 실패 카운트 증가
+            fail_count = self.cache_service.increment_failure_count(search_key)
             
             # 실패 기록 저장
             self._record_search_failure(
                 product_name=product_name,
                 normalized_name=normalized_name,
-                error_message=f"Crawler error: {str(e)}"
+                error_message=f"Crawler error: {str(e)} (fail_count={fail_count})"
             )
             
             return self._build_error_response("크롤링 중 오류가 발생했습니다.")
         
         except Exception as e:
             logger.error(f"Unexpected error in search_price: {e}")
+            # 🔴 실패 카운트 증가
+            fail_count = self.cache_service.increment_failure_count(search_key)
             
             # 실패 기록 저장
             self._record_search_failure(
                 product_name=product_name,
                 normalized_name=normalized_name,
-                error_message=f"Unexpected error: {str(e)}"
+                error_message=f"Unexpected error: {str(e)} (fail_count={fail_count})"
             )
             
             return self._build_error_response("검색 중 오류가 발생했습니다.")

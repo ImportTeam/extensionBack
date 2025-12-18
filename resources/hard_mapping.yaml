@@ -62,7 +62,7 @@ mapping:
   "맥북 프로 16": "Apple 맥북 프로 16"
   "맥북 프로 14": "Apple 맥북 프로 14"
   "맥북 프로": "Apple 맥북 프로"
-  "맥북": "Apple 맥북"
+  # ⚠️ 주의: "맥북" 단독 매핑 제거 (모델 정보 없음)
   "MacBook Air 15": "Apple 맥북 에어 15"
   "MacBook Air 13": "Apple 맥북 에어 13"
   "MacBook Pro 16": "Apple 맥북 프로 16"
@@ -111,13 +111,18 @@ mapping:
   "갤럭스북": "Samsung 갤럭시북"
   "Galaxy Book": "Samsung 갤럭시북"
   
+  
+  "갤럭시 버즈 3" : "Samsung 갤럭시 버즈 3"
   "갤럭시 버즈 2": "Samsung 갤럭시 버즈 2"
-  "갤럭시 버즈": "Samsung 갤럭시 버즈"
-  "Galaxy Buds": "Samsung 갤럭시 버즈"
+  "갤럭시 버즈 프로": "Samsung 갤럭시 버즈 프로"
+  "갤럭시 버즈 라이브": "Samsung 갤럭시 버즈 라이브"
+  # ⚠️ 주의: "갤럭시 버즈" 단독 매핑 제거 (세대 정보 없음)
+  # → Synonym 단계에서 "버즈", "버즈2", "버즈프로" 등으로 확장 처리
   
   "갤럭시 탭 S": "Samsung 갤럭시 탭 S"
-  "갤럭시 탭": "Samsung 갤럭시 탭"
-  "Galaxy Tab": "Samsung 갤럭시 탭"
+  "갤럭시 탭 S9": "Samsung 갤럭시 탭 S9"
+  "갤럭시 탭 S8": "Samsung 갤럭시 탭 S8"
+  # ⚠️ 주의: "갤럭시 탭" 단독 매핑 제거 (세대 정보 없음)
   
   "비스포크": "Samsung 비스포크"
   "Bespoke": "Samsung 비스포크"

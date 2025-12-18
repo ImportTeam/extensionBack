@@ -9,34 +9,44 @@ from src.core.logging import logger
 from ..core.cleaning import clean_product_name, split_kr_en_boundary
 
 
-def normalize_search_query(text: str) -> str:
+def normalize_search_query(text: str, skip_hard_mapping: bool = False) -> str:
     """외부 쇼핑몰 상품명을 다나와 검색에 적합하게 정규화합니다.
     
     📋 정규화 파이프라인 (우선순위 순):
     
-    0️⃣ Level 0: Hard Mapping (강제 변환, 즉시 반환)
+    0 Level 0: Hard Mapping (강제 변환, 즉시 반환)
         └─ 5단계: 액세서리필터 → 정규화 → 매핑 → 검증 → 반환
+        └─ ⚠️ 멱등성: 이미 Hard Mapping된 결과는 재실행 금지
     
-    1️⃣ Level 1: UPCS 기반 정규화
+    1 Level 1: UPCS 기반 정규화
         └─ 설정 기반 정규화 시도
     
-    2️⃣ Level 2: 레거시 휴리스틱
+    2 Level 2: 레거시 휴리스틱
         └─ IT/비IT 분류 → 노이즈 제거
+    
+    Args:
+        text: 정규화할 검색어
+        skip_hard_mapping: True → Hard Mapping 스킵 (이미 Hard Mapped된 결과)
     """
     if not text:
         return ""
 
     # 🔴 Level 0: Hard Mapping (가장 우선)
     # Rule 3: Execution Stage 0 - 모든 단계보다 먼저 실행
-    try:
-        from .hard_mapping_stage import apply_hard_mapping_complete
-        
-        hard_mapped = apply_hard_mapping_complete(text)
-        if hard_mapped:
-            logger.info(f"[normalize] Level 0 Hard Mapping SUCCESS: '{text}' → '{hard_mapped}'")
-            return hard_mapped
-    except Exception as e:
-        logger.debug(f"[normalize] Level 0 Hard Mapping error: {type(e).__name__}: {e}")
+    # 💡 Idempotency: skip_hard_mapping=True면 Hard Mapping 재실행 금지
+    if not skip_hard_mapping:
+        try:
+            from .hard_mapping_stage import apply_hard_mapping_complete
+            
+            hard_mapped = apply_hard_mapping_complete(text)
+            if hard_mapped:
+                logger.info(f"[normalize] Level 0 Hard Mapping SUCCESS: '{text}' → '{hard_mapped}'")
+                # 🎯 Hard Mapping 성공 시 UPCS/Legacy 스킵 (멱등성 유지)
+                return hard_mapped
+        except Exception as e:
+            logger.debug(f"[normalize] Level 0 Hard Mapping error: {type(e).__name__}: {e}")
+    else:
+        logger.debug(f"[normalize] Skipping Level 0 Hard Mapping (already hard-mapped)")
 
     # 🟡 Level 1: UPCS 기반 정규화
     try:

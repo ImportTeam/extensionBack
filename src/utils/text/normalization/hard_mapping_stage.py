@@ -140,12 +140,12 @@ class HardMappingStage:
         mapped_result: Optional[str]
     ) -> bool:
         """
-        📊 Stage 4: 매칭 결과 검증 (Rule 5)
+        📊 Stage 4: 매칭 결과 검증 (Rule 5 + 안전장치)
         
-        95% 이상 확실성 검증:
-        - 브랜드가 명시됨
-        - 제품명이 명시됨
-        - 오류 가능성 < 5%
+        검증 항목:
+        - 브랜드 명시
+        - 중요 토큰(세대, 등급) 보존 확인
+        - 의미 손실 감지
         
         Args:
             original_text: 원본 입력
@@ -161,7 +161,7 @@ class HardMappingStage:
         
         # 1️⃣ 브랜드 명시 확인
         brands = {"apple", "samsung", "lg", "dell", "hp", "asus", "lenovo", 
-                 "농심", "삼양", "오뚜기", "lg", "sony", "bose", "jbl", "beats"}
+                 "농심", "삼양", "오뚜기", "sony", "bose", "jbl", "beats"}
         
         mapped_lower = mapped_result.lower()
         has_brand = any(brand in mapped_lower for brand in brands)
@@ -170,8 +170,33 @@ class HardMappingStage:
             logger.warning(f"[Stage 4] Missing brand in result: {mapped_result}")
             return False
         
-        # 2️⃣ 매핑 결과가 원본과 크게 다르지 않은지 확인
-        # (다나와 검색 친화적인지 재확인)
+        # 2️⃣ 🆕 중요 토큰 보존 확인 (갤럭시 버즈/아이폰 시리즈 대책)
+        # 입력에 있던 중요 정보가 결과에서 손실되면 거절
+        
+        input_lower = original_text.lower()
+        result_lower = mapped_result.lower()
+        
+        # 2-1) 숫자(세대) 손실 확인
+        # 입력: "갤럭시 버즈3 프로" vs 결과: "삼성 갤럭시 버즈" → ❌ 손실
+        input_numbers = set(re.findall(r'\d+', input_lower))
+        result_numbers = set(re.findall(r'\d+', result_lower))
+        
+        if input_numbers and not (input_numbers & result_numbers):
+            logger.warning(f"[Stage 4] ⚠️ Significant number lost: input={input_numbers}, result={result_numbers}")
+            # 숫자 손실은 높은 위험도 → 거절
+            return False
+        
+        # 2-2) 등급 키워드 손실 확인
+        # 입력: "에어팟 프로" vs 결과: "에어팟" → ❌ 손실
+        grade_keywords = {"프로", "pro", "max", "ultra", "fe", "plus", 
+                         "2", "3", "4", "5"}  # 세대도 포함
+        
+        input_grades = set(kw for kw in grade_keywords if kw in input_lower)
+        result_grades = set(kw for kw in grade_keywords if kw in result_lower)
+        
+        if input_grades and not (input_grades & result_grades):
+            logger.warning(f"[Stage 4] ⚠️ Grade token lost: input={input_grades}, result={result_grades}")
+            return False
         
         logger.debug(f"[Stage 4] ✅ Result validated: {mapped_result}")
         return True

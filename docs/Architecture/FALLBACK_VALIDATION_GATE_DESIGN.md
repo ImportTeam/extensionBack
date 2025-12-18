@@ -23,14 +23,14 @@
 ├─ Level 1: Synonym (의미 확장만)
 │   ├─ 후보 생성: ["apple 아이폰 17 pro", "아이폰 17 pro", "iphone 17"]
 │   ├─ 각 후보로 다나와 검색 시도
-│   └─ ✅ 성공하면 결과 반환
+│   └─  성공하면 결과 반환
 │
 ├─ Level 2: Fallback (의미 축소 허용 + 검증)
 │   ├─ 브랜드 + 모델 추출
 │   ├─ 카테고리별 후보 생성
 │   ├─ 각 후보로 검색 시도
 │   ├─ ⚠️ 결과 검증 Gate 통과?
-│   │   ├─ ✅ 통과 → 결과 반환 (캐시)
+│   │   ├─ 통과 → 결과 반환 (캐시)
 │   │   └─ ❌ 실패 → 다음 후보
 │   └─ 모든 후보 실패 → ProductNotFoundException
 │
@@ -139,7 +139,7 @@ async def search_with_candidates(
     """
     각 후보를 순회하며 검색 시도
     
-    ✅ 성공 조건: 검색 결과 + 검증 통과
+     성공 조건: 검색 결과 + 검증 통과
     """
     for candidate in candidates:
         try:
@@ -157,7 +157,7 @@ async def search_with_candidates(
             )
             
             if is_valid:
-                logger.info(f"✅ Fallback success with candidate: {candidate}")
+                logger.info(f" Fallback success with candidate: {candidate}")
                 return result
             else:
                 logger.warning(f"❌ Validation failed for candidate: {candidate}")
@@ -216,7 +216,7 @@ class ValidationGate:
         if input_brand and result_brand and input_brand != result_brand:
             return False  # 브랜드가 다르면 ❌
         
-        return True  # ✅ 모든 검증 통과
+        return True  #  모든 검증 통과
     
     def _categories_compatible(self, cat1: str, cat2: str) -> bool:
         """카테고리 호환성 확인"""
@@ -233,10 +233,10 @@ class ValidationGate:
 
 | 입력 | 검색 쿼리 | 결과 | 검증 | 판정 |
 |-----|---------|------|------|------|
-| "Apple 아이폰 17" | "아이폰" | Apple 아이폰 15 | 카테고리 ✅, 브랜드 ✅, 키워드 85% | ✅ 통과 |
-| "Apple 아이폰 17" | "아이폰" | Samsung 갤럭시 S24 | 카테고리 ✅, 브랜드 ❌ | ❌ 실패 |
-| "맥북 에어" | "노트북" | LG 그램 16 | 카테고리 ✅, 브랜드 ❌, 키워드 0% | ❌ 실패 |
-| "삼양 불닭" | "라면" | 농심 신라면 | 카테고리 ✅, 브랜드 ❌ | ❌ 실패 |
+| "Apple 아이폰 17" | "아이폰" | Apple 아이폰 15 | 카테고리 , 브랜드 , 키워드 85% |  통과 |
+| "Apple 아이폰 17" | "아이폰" | Samsung 갤럭시 S24 | 카테고리 , 브랜드 ❌ | ❌ 실패 |
+| "맥북 에어" | "노트북" | LG 그램 16 | 카테고리 , 브랜드 ❌, 키워드 0% | ❌ 실패 |
+| "삼양 불닭" | "라면" | 농심 신라면 | 카테고리 , 브랜드 ❌ | ❌ 실패 |
 
 ---
 
@@ -403,7 +403,7 @@ class TestFallbackAndValidation:
         }
         
         is_valid = gate.validate("Apple 아이폰 17", result)
-        assert is_valid is True  # ✅ 브랜드 같음
+        assert is_valid is True  #  브랜드 같음
     
     def test_validation_fail_different_brand(self):
         """검증 실패: 브랜드 다름"""
@@ -431,11 +431,4 @@ class TestFallbackAndValidation:
 ```
 
 ---
-
-## 다음 단계
-
-1. ✅ Hard Mapping 아키텍처 명시화
-2. ✅ Synonym 규칙 설계
-3. ✅ Fallback + 검증 Gate 설계
-4. 📊 **최종 아키텍처 다이어그램** (마지막 문서)
 

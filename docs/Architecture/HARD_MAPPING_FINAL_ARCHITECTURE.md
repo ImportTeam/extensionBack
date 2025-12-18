@@ -1,4 +1,4 @@
-# Hard Mapping 아키텍처 - 최종 정의 (프로덕션 정답 구조)
+# Hard Mapping 아키텍처
 
 ## 핵심 원칙
 
@@ -36,12 +36,12 @@
         ┌────────────────────────────┐
         │ Stage 3: 완전 매칭          │
         │ if key == normalized_text: │  ◀─ 부분 포함 ❌
-        │    return mapping[key]     │     완전 일치만 ✅
+        │    return mapping[key]     │     완전 일치만 
         └────────────┬───────────────┘
                      │
         ┌────────────┴────────────┐
         │                         │
-   ✅ 매칭됨                  ❌ 매칭 실패
+    매칭됨                  ❌ 매칭 실패
         │                         │
         ▼                         ▼
    Stage 4,5             Synonym 단계로
@@ -97,7 +97,7 @@ def load_hard_mapping() -> Dict[str, str]:
     
     raw_mapping = yaml.safe_load(f)["mapping"]
     
-    # ✅ 각 키를 normalize_for_hard_mapping_match()로 정규화
+    #  각 키를 normalize_for_hard_mapping_match()로 정규화
     normalized_mapping = {}
     for raw_key, value in raw_mapping.items():
         norm_key = normalize_for_hard_mapping_match(raw_key)
@@ -116,7 +116,7 @@ def load_hard_mapping() -> Dict[str, str]:
 def stage_2_normalize_for_matching(text: str) -> str:
     """Stage 2: 정규화.
     
-    ✅ normalize_for_hard_mapping_match()를 호출
+     normalize_for_hard_mapping_match()를 호출
     (YAML 로더와 동일한 함수 사용)
     """
     normalized = normalize_for_hard_mapping_match(text)
@@ -133,12 +133,12 @@ def stage_2_normalize_for_matching(text: str) -> str:
 def stage_3_apply_hard_mapping(normalized_text: str) -> Optional[str]:
     """Stage 3: 완전 매칭만.
     
-    ✅ normalized_text는 이미 Stage 2에서
+     normalized_text는 이미 Stage 2에서
        normalize_for_hard_mapping_match()로 정규화됨
     
-    ✅ mapping의 키도 같은 함수로 정규화되어 저장됨
+     mapping의 키도 같은 함수로 정규화되어 저장됨
     
-    ✅ 따라서 키 == normalized_text 비교는 안전함
+     따라서 키 == normalized_text 비교는 안전함
     """
     mapping = load_hard_mapping()  # 키가 이미 정규화됨
     sorted_keys = get_sorted_mapping_keys()
@@ -156,9 +156,9 @@ def stage_3_apply_hard_mapping(normalized_text: str) -> Optional[str]:
 
 | 조건 | 동작 | 결과 |
 |------|------|------|
-| 입력: `"MacBook Air 15"` | normalize → `"macbook air 15"` | ✅ YAML key와 매칭 |
-| 입력: `"MACBOOK AIR 15"` | normalize → `"macbook air 15"` | ✅ YAML key와 매칭 |
-| 입력: `"맥북 에어 15"` | normalize → `"macbook air 15"` | ✅ YAML key와 매칭 |
+| 입력: `"MacBook Air 15"` | normalize → `"macbook air 15"` |  YAML key와 매칭 |
+| 입력: `"MACBOOK AIR 15"` | normalize → `"macbook air 15"` |  YAML key와 매칭 |
+| 입력: `"맥북 에어 15"` | normalize → `"macbook air 15"` |  YAML key와 매칭 |
 | 입력: `"apple 아이폰 17 pro"` | normalize → `"apple 아이폰 17 pro"` | ❌ YAML에 없음 |
 | 입력: `"아이폰"` + `"apple 아이폰 15"` | Stage 3에서 부분 포함 시도 | ❌ 완전 매칭만 허용 |
 
@@ -192,7 +192,7 @@ def stage_3_apply_hard_mapping(normalized_text: str) -> Optional[str]:
 입력: "apple 아이폰 17 pro"
 → 정규화: "apple 아이폰 17 pro"
 → Stage 3: "apple 아이폰 17 pro" == YAML key? 아니오
-→ ✅ 반환: None (Synonym 단계로)
+→  반환: None (Synonym 단계로)
 ```
 
 ### 문제 2: "화이트 × B182W13" → "LG 냉장고 B182DS13"
@@ -207,18 +207,5 @@ def stage_3_apply_hard_mapping(normalized_text: str) -> Optional[str]:
 입력: "화이트 × b182w13"
 → 정규화: "화이트 b182w13"
 → Stage 3: YAML key에 없음
-→ ✅ 반환: None
+→  반환: None
 ```
-
----
-
-## 다음 단계 (2-4번)
-
-이 구조가 확정되면:
-
-1. **Synonym 규칙** - 의미 확장만
-2. **Fallback 검증 Gate** - 검색 시도, 결과 검증
-3. **최종 아키텍처** - 엔드투엔드 흐름
-
-이 3단계만 남아있다.
-

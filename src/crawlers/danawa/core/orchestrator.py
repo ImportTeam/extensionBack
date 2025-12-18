@@ -10,6 +10,7 @@
 from __future__ import annotations
 
 import asyncio
+import re
 from typing import Dict, Optional
 
 from src.core.config import settings
@@ -26,6 +27,43 @@ from src.crawlers.danawa.playwright.search import search_product
 from src.crawlers.danawa.playwright.detail import get_product_lowest_price
 
 
+def is_broad_query(product_name: str) -> bool:
+    """🔴 Broad query 감지 (timeout 확장 필요)
+    
+    검색어가 너무 광범위하면 다나와가 많은 결과를 반환하고,
+    페이지 로딩/렌더링이 오래 걸림 → timeout 확장 필요
+    
+    Broad query 판정 기준:
+    - 3자 이하 (예: "갤럭시 버즈" → 검색 결과 5000+개)
+    - 숫자/모델명 없음 (예: "맥북" vs "맥북 에어 15")
+    - 한글-영문 섞임 없음 (예: "MacBook Air" → 구체적)
+    """
+    cleaned = clean_product_name(product_name).strip()
+    
+    # 🔍 판정 로직
+    # 1) 너무 짧음 (3자 이하) + 숫자 없음
+    if len(cleaned) <= 3 and not re.search(r'\d', cleaned):
+        logger.warning(f"[Broad] Detected: '{product_name}' is too short + no model number")
+        return True
+    
+    # 2) 명백히 generic한 키워드 (단일 브랜드명만)
+    generic_keywords = {
+        "갤럭시", "아이폰", "맥북", "맥", "갤럭시북", "그램", 
+        "갤럭시탭", "아이패드", "에어팟", "galaxy", "macbook"
+    }
+    if cleaned.lower() in generic_keywords:
+        logger.warning(f"[Broad] Detected: '{product_name}' is generic brand name")
+        return True
+    
+    # 3) "버즈", "워치" 같은 카테고리 + 숫자 없음
+    category_only = {"버즈", "워치", "태블릿", "폰", "노트북"}
+    if any(kw in cleaned for kw in category_only) and not re.search(r'\d', cleaned):
+        logger.warning(f"[Broad] Detected: '{product_name}' is category + no generation")
+        return True
+    
+    return False
+
+
 async def search_lowest_price(
     crawler,
     product_name: str,
@@ -36,8 +74,22 @@ async def search_lowest_price(
     📝 Note: product_name은 이미 정규화된 쿼리입니다.
     - PriceSearchService에서 normalize_search_query() 적용 후 전달
     - 여기서는 순수 정제(clean)만 수행, 재정규화는 하지 않음
+    
+    🔴 Broad Query Detection:
+    - "갤럭시 버즈" 같은 검색어 → timeout 확장 (5s → 10s)
+    - 다나와의 과도한 결과 반환 방지
     """
     total_budget_ms = int(getattr(settings, "crawler_total_budget_ms", 4000))
+    
+    # 🔴 Broad query 감지 → timeout 50% 확장
+    if is_broad_query(product_name):
+        original_budget = total_budget_ms
+        total_budget_ms = int(total_budget_ms * 1.5)  # 4000ms → 6000ms
+        logger.warning(
+            f"[BROAD-QUERY] Detected broad query '{product_name}' "
+            f"→ extending timeout {original_budget}ms → {total_budget_ms}ms"
+        )
+    
     timeout_mgr = TimeoutManager(total_budget_ms)
     cb = crawler._get_circuit_breaker()
 

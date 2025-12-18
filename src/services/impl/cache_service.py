@@ -104,6 +104,61 @@ class CacheService:
         except Exception:
             return None
 
+    def get_failure_count(self, product_name: str) -> int:
+        """🔴 반복 실패 횟수 조회 (Hard Skip 판단용)
+        
+        Returns:
+            N번 연속 실패 카운트
+        """
+        try:
+            cache_key = f"{generate_negative_cache_key(product_name)}:fail_count"
+            count = self.redis_client.get(cache_key)
+            return int(count) if count else 0
+        except Exception:
+            return 0
+
+    def increment_failure_count(self, product_name: str, max_count: int = 3) -> int:
+        """🔴 실패 카운트 증가 (N번 실패하면 Hard Skip)
+        
+        Args:
+            product_name: 상품명
+            max_count: Hard Skip 임계값 (기본 3회)
+            
+        Returns:
+            현재 실패 카운트
+        """
+        try:
+            cache_key = f"{generate_negative_cache_key(product_name)}:fail_count"
+            current_count = self.redis_client.incr(cache_key)
+            # TTL = 부정 캐시 TTL의 2배 (충분한 관찰 기간)
+            self.redis_client.expire(cache_key, 120)
+            logger.warning(f"[Failure] {product_name}: fail_count={current_count}/{max_count}")
+            return int(current_count)
+        except Exception as e:
+            logger.error(f"Failed to increment failure count: {e}")
+            return 1
+
+    def reset_failure_count(self, product_name: str) -> bool:
+        """🟢 실패 카운트 초기화 (성공 시)"""
+        try:
+            cache_key = f"{generate_negative_cache_key(product_name)}:fail_count"
+            result = self.redis_client.delete(cache_key)
+            return result > 0
+        except Exception:
+            return False
+
+    def should_hard_skip(self, product_name: str, max_failures: int = 3) -> bool:
+        """🔴 Hard Skip 판정 (N번 연속 실패 → 즉시 거절)
+        
+        Returns:
+            True → 이 쿼리는 이미 N번 실패했으므로 즉시 ProductNotFoundException 반환
+        """
+        failure_count = self.get_failure_count(product_name)
+        if failure_count >= max_failures:
+            logger.warning(f"[Hard Skip] {product_name}: fail_count={failure_count} >= {max_failures}")
+            return True
+        return False
+
     def set_negative(self, product_name: str, message: str, ttl_seconds: int = 60) -> bool:
         """검색 실패(미발견) 결과를 짧게 캐시하여 과도한 재시도를 완화"""
         try:
