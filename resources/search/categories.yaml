@@ -1,0 +1,17 @@
+# 카테고리 감지 및 키워드 정의
+categories:
+  earphone:
+    keywords: ["이어폰", "에어팟", "버즈", "이어버드", "헤드폰"]
+    pattern: "(이어폰|에어팟|버즈|이어버드|헤드폰|AirPods)"
+  laptop:
+    keywords: ["노트북", "랩탑", "맥북", "그램", "갤럭시북"]
+    pattern: "(노트북|랩탑|맥북|그램|갤럭시북|북)"
+  monitor:
+    keywords: ["모니터", "디스플레이", "패널"]
+    pattern: "(모니터|디스플레이|패널)"
+  phone:
+    keywords: ["폰", "아이폰", "갤럭시", "핸드폰", "스마트폰"]
+    pattern: "(폰|아이폰|갤럭시|핸드폰|스마트폰)"
+  tablet:
+    keywords: ["태블릿", "아이패드", "패드"]
+    pattern: "(태블릿|아이패드|패드)"

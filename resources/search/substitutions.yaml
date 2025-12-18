@@ -1,0 +1,10 @@
+# 검색어 대체/확장 사전
+substitutions:
+  맥북: ["MacBook", "MacBook Air", "MacBook Pro"]
+  아이폰: ["iPhone"]
+  아이패드: ["iPad"]
+  에어팟: ["AirPods"]
+  애플워치: ["Apple Watch"]
+  갤럭시: ["Galaxy"]
+  버즈: ["Galaxy Buds", "Buds"]
+  그램: ["LG gram"]

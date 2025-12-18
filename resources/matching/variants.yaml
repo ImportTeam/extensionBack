@@ -1,0 +1,14 @@
+# 제품군(Variant) 정의 - 매칭 시 불일치 패널티 부여 대상
+variants:
+  - pro
+  - air
+  - max
+  - mini
+  - ultra
+  - fe
+  - plus
+  - lite
+  - edge
+  - qled
+  - oled
+  - neo

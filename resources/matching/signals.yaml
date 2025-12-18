@@ -1,0 +1,26 @@
+# 모델 코드 추출 시 제외할 블랙리스트
+model_code_blacklist:
+  - WIN10
+  - WIN11
+  - WINDOWS
+  - HOME
+  - PRO
+  - SSD
+  - HDD
+  - NVME
+  - RAM
+  - PCIE
+  - PCIe
+
+# 명칭+숫자 조합 추출 시 제외할 접두사
+named_number_stop_prefixes:
+  - win
+  - windows
+  - 홈
+  - home
+  - pro
+  - 프로
+  - 정품
+  - 리퍼
+  - 새제품
+  - 중고
