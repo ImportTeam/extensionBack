@@ -1,4 +1,4 @@
-"""Search query normalization (legacy heuristics + UPCS fallback)."""
+"""Search query normalization (Hard Mapping + legacy heuristics + UPCS fallback)."""
 
 from __future__ import annotations
 
@@ -10,20 +10,47 @@ from ..core.cleaning import clean_product_name, split_kr_en_boundary
 
 
 def normalize_search_query(text: str) -> str:
-    """외부 쇼핑몰 상품명을 다나와 검색에 적합하게 정규화합니다."""
+    """외부 쇼핑몰 상품명을 다나와 검색에 적합하게 정규화합니다.
+    
+    📋 정규화 파이프라인 (우선순위 순):
+    
+    0️⃣ Level 0: Hard Mapping (강제 변환, 즉시 반환)
+        └─ 5단계: 액세서리필터 → 정규화 → 매핑 → 검증 → 반환
+    
+    1️⃣ Level 1: UPCS 기반 정규화
+        └─ 설정 기반 정규화 시도
+    
+    2️⃣ Level 2: 레거시 휴리스틱
+        └─ IT/비IT 분류 → 노이즈 제거
+    """
     if not text:
         return ""
 
-    # 0) UPCS 기반 정규화 우선 시도
+    # 🔴 Level 0: Hard Mapping (가장 우선)
+    # Rule 3: Execution Stage 0 - 모든 단계보다 먼저 실행
+    try:
+        from .hard_mapping_stage import apply_hard_mapping_complete
+        
+        hard_mapped = apply_hard_mapping_complete(text)
+        if hard_mapped:
+            logger.info(f"[normalize] Level 0 Hard Mapping SUCCESS: '{text}' → '{hard_mapped}'")
+            return hard_mapped
+    except Exception as e:
+        logger.debug(f"[normalize] Level 0 Hard Mapping error: {type(e).__name__}: {e}")
+
+    # 🟡 Level 1: UPCS 기반 정규화
     try:
         from src.upcs.normalizer import normalize_query
 
         normalized = normalize_query(text, vendor="danawa")
         if normalized:
+            logger.debug(f"[normalize] Level 1 UPCS normalization: '{text}' → '{normalized}'")
             return str(normalized)
     except Exception as e:
-        logger.debug(f"UPCS normalization fallback: {type(e).__name__}: {e}")
+        logger.debug(f"[normalize] Level 1 UPCS fallback: {type(e).__name__}: {e}")
 
+    # 🟢 Level 2: 레거시 휴리스틱
+    logger.debug(f"[normalize] Falling back to Level 2 legacy heuristics")
     return _normalize_search_query_legacy(text)
 
 

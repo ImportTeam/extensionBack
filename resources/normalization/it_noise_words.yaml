@@ -1,0 +1,281 @@
+# IT 제품 노이즈 제거 규칙
+# 이 파일의 단어들은 IT 상품에서 검색 품질을 해치므로 제거 대상입니다.
+
+comment: "IT 상품 노이즈 제거 규칙 (Level 3)"
+
+# 1. 용량 (용량 수치는 정규식으로 처리, 여기서는 단위만)
+storage_units:
+  - "GB"
+  - "TB"
+  - "MB"
+  - "KB"
+  - "GiB"
+  - "TiB"
+  
+storage_specs:
+  - "SSD"
+  - "HDD"
+  - "NVME"
+  - "NVMe"
+  - "DDR5"
+  - "DDR4"
+  - "DDR3"
+  - "LPDDR5"
+  - "GDDR6"
+  - "GDDR5X"
+
+# 2. CPU/프로세서 제거 (브랜드 제거, 모델은 중요하면 보존)
+cpu_brands:
+  - "인텔"
+  - "Intel"
+  - "라이젠"
+  - "Ryzen"
+  - "AMD"
+  - "Snapdragon"
+  - "스냅드래곤"
+
+cpu_models_to_remove:
+  - "Core"  # 일반화된 용어
+  - "Processor"
+
+# M 칩은 식별자이므로 preserve_patterns에서 처리
+# M1, M2, M3, M4 등은 유지됨
+
+# 3. OS 제거
+operating_systems:
+  - "Windows"
+  - "윈도우"
+  - "Windows 11"
+  - "Windows 10"
+  - "WIN11"
+  - "WIN10"
+  - "macOS"
+  - "Mac OS"
+  - "macOS Sonoma"
+  - "Android"
+  - "안드로이드"
+  - "iOS"
+  - "Linux"
+  - "리눅스"
+  - "Chrome OS"
+
+os_editions:
+  - "Home"
+  - "Pro"
+  - "Professional"
+  - "Enterprise"
+  - "Premium"
+  - "Standard"
+
+# 4. 색상 (IT 상품에서는 색상이 선택사항)
+colors:
+  - "화이트"
+  - "블랙"
+  - "실버"
+  - "실버화이트"
+  - "골드"
+  - "로즈골드"
+  - "스페이스그레이"
+  - "그레이"
+  - "블루"
+  - "핑크"
+  - "레드"
+  - "그린"
+  - "퍼플"
+  - "로즈"
+  - "샴페인"
+  - "뉴트럼"
+  - "차콜"
+  - "브론즈"
+  - "건메탈"
+  - "미드나이트"
+  - "스타라이트"
+
+# 5. 포트 (USB-C는 표준화, Type-C 등은 제거)
+port_types:
+  - "Type-C"
+  - "Type C"
+  - "USB-C"
+  - "USB C"
+  - "C타입"
+  - "C-Type"
+  - "3.5mm"
+  - "3.5"
+  - "Lightning"
+  - "라이트닝"
+
+port_standards:
+  - "HDMI"
+  - "DP"
+  - "DisplayPort"
+  - "Thunderbolt"
+  - "Thunderbolt 3"
+  - "Thunderbolt 4"
+
+# 6. 액세서리 (케이스, 보호필름 등)
+accessories:
+  - "케이스"
+  - "커버"
+  - "키스킨"
+  - "스킨"
+  - "필름"
+  - "보호필름"
+  - "강화유리"
+  - "거치대"
+  - "스탠드"
+  - "파우치"
+  - "가방"
+  - "충전기"
+  - "어댑터"
+  - "케이블"
+  - "허브"
+  - "젠더"
+  - "도킹"
+  - "독"
+  - "스티커"
+  - "포함"
+  - "구성"
+
+# 7. 기술 용어 & 마케팅 (IT에서는 의미 없음)
+tech_terms_noise:
+  - "무선"
+  - "유선"
+  - "블루투스"
+  - "Wi-Fi"
+  - "와이파이"
+  - "5GHz"
+  - "2.4GHz"
+  - "액티브"
+  - "노이즈캔슬링"
+  - "노이즈 캔슬링"
+  - "ANC"
+  - "입체음향"
+  - "돌비"
+  - "Dolby"
+  - "하이레즈"
+  - "Hi-Res"
+  - "IPX"
+  - "방수"
+  - "방진"
+
+# 8. 상태 & 구성
+product_conditions:
+  - "정품"
+  - "리퍼"
+  - "리퍼제품"
+  - "새제품"
+  - "중고"
+  - "미개봉"
+  - "리뉴얼"
+  - "한정판"
+  - "한정"
+  - "에디션"
+  - "Limited"
+
+packaging_terms:
+  - "패키지"
+  - "세트"
+  - "구성"
+  - "포함"
+  - "별도"
+  - "추가"
+  - "기본"
+  - "번들"
+
+# 9. 배송 & 가격 정보 (불필요)
+delivery_terms:
+  - "무료배송"
+  - "배송"
+  - "빠른배송"
+  - "로켓배송"
+  - "당일배송"
+  - "택배"
+
+price_terms:
+  - "최저가"
+  - "할인"
+  - "세일"
+  - "쿠폰"
+  - "무조건"
+
+# 10. 판매처 정보 (크롤링 대상 상관없이 제거)
+mall_names:
+  - "쿠팡"
+  - "위메프"
+  - "위메프"
+  - "G마켓"
+  - "옥션"
+  - "11번가"
+  - "네이버"
+  - "롯데"
+
+# 11. 특수 문법
+special_markers:
+  - "및"
+  - "등"
+  - "외"
+
+# 12. 단일 알파벳 (의미 없는 경우, 하지만 X, M 등 모델명은 preserve_patterns에서 처리)
+remove_single_letters:
+  - "a"
+  - "b"
+  - "c"
+  - "d"
+  - "e"
+  - "f"
+  - "g"
+  - "h"
+  - "i"
+  - "j"
+  - "k"
+  - "l"
+  - "n"
+  - "o"
+  - "p"
+  - "q"
+  - "r"
+  - "s"
+  - "t"
+  - "u"
+  - "v"
+  - "w"
+  - "y"
+  - "z"
+
+# --- 보존 규칙 (이 패턴들은 절대 제거 금지) ---
+preserve_patterns:
+  # M 칩셋 (Apple)
+  - pattern: "M\\d+"
+    reason: "Apple M1, M2, M3, M4 등 식별자"
+  
+  # 프로세서 모델 (인텔)
+  - pattern: "i[3579]"
+    reason: "인텔 i3, i5, i7, i9"
+  
+  # GPU 모델
+  - pattern: "[GR]TX\\s*\\d+"
+    reason: "NVIDIA GTX/RTX 모델번호"
+  
+  # 숫자 (대부분 모델, 세대, 크기)
+  - pattern: "\\d+"
+    reason: "모델번호, 세대, 화면크기 등"
+  
+  # 주요 제품명 보존
+  - pattern: "프로|에어|맥스|울트라|Plus|Max"
+    reason: "제품 라인 식별자"
+
+# 적용 순서
+apply_order:
+  - "1. 특수 마커 제거"
+  - "2. 액세서리 제거"
+  - "3. 색상 제거 (IT 상품 맥락에서)"
+  - "4. OS 제거"
+  - "5. CPU/GPU 제거"
+  - "6. 기술 용어 제거"
+  - "7. 상태/배송 정보 제거"
+  - "8. 다중 공백 정리"
+
+notes: |
+  이 규칙은 IT 상품 정규화에만 적용됩니다.
+  비IT 상품(음식, 의류 등)에는 다른 규칙이 적용됩니다.
+  정기적으로 검색 실패 로그를 분석해 규칙을 개선하세요.

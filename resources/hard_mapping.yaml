@@ -1,0 +1,276 @@
+# Hard Mapping - Level 0 정규화 규칙
+# 검색 성공률을 보장하는 강제 매핑
+
+meta:
+  description: |
+    Hard Mapping은 normalize의 "0단계"에서 실행되는 최우선 규칙입니다.
+    사용자 입력을 다나와 검색에 최적화된 표준형으로 강제 변환합니다.
+    
+    목표: 다나와 검색 성공률 확보 (매칭 후 즉시 반환)
+    우선순위: 🔴 가장 높음 (다른 모든 규칙보다 먼저)
+  
+  version: "1.0"
+  last_updated: "2025-12-18"
+  update_policy: "monthly or on-demand"
+  confidence_threshold: "95%"
+
+rules:
+  # ✅ Rule 1: Longest Match First
+  # 반드시 길이 내림차순으로 정렬해서 매칭
+  # 예: "맥북 에어 15" > "맥북 에어" > "맥북"
+  longest_match_first: true
+  
+  # ✅ Rule 2: Case/Space Normalization 후 매칭
+  # Hard Mapping 전에 입력을 정규화하되, 원문 보존
+  normalize_before_match:
+    - lowercase: true
+    - normalize_whitespace: true
+    - remove_special_chars: true
+  
+  # ✅ Rule 3: Execution Stage = 0 (normalize 최초 단계)
+  # Hard Mapping은 모든 정규화보다 먼저 실행, 매칭 성공 시 즉시 반환
+  execution_stage: 0
+  immediate_return_on_match: true
+  
+  # ✅ Rule 4: 액세서리 키워드 필터 (안전장치)
+  # 케이스, 필름 등 액세서리 키워드가 있으면 Hard Mapping 스킵
+  skip_if_contains:
+    - "케이스"
+    - "커버"
+    - "필름"
+    - "보호필름"
+    - "거치대"
+    - "스탠드"
+    - "파우치"
+    - "가방"
+    - "포함"
+    - "번들"
+    - "세트"
+    - "구성"
+  
+  # ✅ Rule 5: 확실한 것만 매핑 (5% 이하 오류율)
+  # 이 리스트에는 "틀릴 가능성이 5% 이하"인 매핑만 포함
+  certainty: "95%+"
+  fallback_strategy: "synonym → fallback queries → playwright"
+
+# 실제 매핑 (완전 매칭 기반)
+mapping:
+  # 🍎 Apple 제품
+  "맥북 에어 15": "Apple 맥북 에어 15"
+  "맥북 에어 13": "Apple 맥북 에어 13"
+  "맥북 에어": "Apple 맥북 에어"
+  "맥북 프로 16": "Apple 맥북 프로 16"
+  "맥북 프로 14": "Apple 맥북 프로 14"
+  "맥북 프로": "Apple 맥북 프로"
+  "맥북": "Apple 맥북"
+  "MacBook Air 15": "Apple 맥북 에어 15"
+  "MacBook Air 13": "Apple 맥북 에어 13"
+  "MacBook Pro 16": "Apple 맥북 프로 16"
+  "MacBook Pro 14": "Apple 맥북 프로 14"
+  "macbook": "Apple 맥북"
+  
+  "아이폰 15": "Apple 아이폰 15"
+  "아이폰 14": "Apple 아이폰 14"
+  "아이폰 13": "Apple 아이폰 13"
+  "아이폰": "Apple 아이폰"
+  "iPhone": "Apple 아이폰"
+  "iPhone 15": "Apple 아이폰 15"
+  "iPhone 14": "Apple 아이폰 14"
+  
+  "에어팟 프로": "Apple 에어팟 프로"
+  "에어팟 맥스": "Apple 에어팟 맥스"
+  "에어팟": "Apple 에어팟"
+  "AirPods Pro": "Apple 에어팟 프로"
+  "AirPods": "Apple 에어팟"
+  "airpods": "Apple 에어팟"
+  
+  "아이패드": "Apple 아이패드"
+  "아이패드 프로": "Apple 아이패드 프로"
+  "아이패드 에어": "Apple 아이패드 에어"
+  "iPad": "Apple 아이패드"
+  "iPad Pro": "Apple 아이패드 프로"
+  
+  "애플워치": "Apple 애플워치"
+  "애플 워치": "Apple 애플워치"
+  "Apple Watch": "Apple 애플워치"
+  
+  "맥 스튜디오": "Apple 맥 스튜디오"
+  "Mac Studio": "Apple 맥 스튜디오"
+  
+  "맥 미니": "Apple 맥 미니"
+  "Mac Mini": "Apple 맥 미니"
+  
+  "아이맥": "Apple 아이맥"
+  "iMac": "Apple 아이맥"
+  
+  # 🔷 Samsung 제품
+  "갤럭시북 360": "Samsung 갤럭시북 360"
+  "갤럭시북 프로": "Samsung 갤럭시북 프로"
+  "갤럭시북": "Samsung 갤럭시북"
+  "갤북": "Samsung 갤럭시북"
+  "갤럭스북": "Samsung 갤럭시북"
+  "Galaxy Book": "Samsung 갤럭시북"
+  
+  "갤럭시 버즈 2": "Samsung 갤럭시 버즈 2"
+  "갤럭시 버즈": "Samsung 갤럭시 버즈"
+  "Galaxy Buds": "Samsung 갤럭시 버즈"
+  
+  "갤럭시 탭 S": "Samsung 갤럭시 탭 S"
+  "갤럭시 탭": "Samsung 갤럭시 탭"
+  "Galaxy Tab": "Samsung 갤럭시 탭"
+  
+  "비스포크": "Samsung 비스포크"
+  "Bespoke": "Samsung 비스포크"
+  
+  "오디세이": "Samsung 오디세이"
+  "Odyssey": "Samsung 오디세이"
+  
+  "갤럭시 워치": "Samsung 갤럭시 워치"
+  "Galaxy Watch": "Samsung 갤럭시 워치"
+  
+  # 🟢 LG 제품
+  "그램 16": "LG 그램 16"
+  "그램 14": "LG 그램 14"
+  "그램": "LG 그램"
+  "LG 그램": "LG 그램"
+  "lg 그램": "LG 그램"
+  "엘지 그램": "LG 그램"
+  "lg그램": "LG 그램"
+  "LG Gram": "LG 그램"
+  
+  # 🔶 Dell 제품
+  "XPS 13": "Dell XPS 13"
+  "XPS 15": "Dell XPS 15"
+  "XPS": "Dell XPS"
+  "Dell XPS": "Dell XPS"
+  "Inspiron": "Dell Inspiron"
+  
+  # 🔵 HP 제품
+  "HP ENVY": "HP ENVY"
+  "ENVY": "HP ENVY"
+  "HP Pavilion": "HP Pavilion"
+  "Pavilion": "HP Pavilion"
+  
+  # 🟠 ASUS 제품
+  "울트라북": "ASUS 울트라북"
+  "비보북": "ASUS 비보북"
+  "ROG": "ASUS ROG"
+  "ASUS ROG": "ASUS ROG"
+  
+  # 🟣 Lenovo 제품
+  "씽크패드": "Lenovo 씽크패드"
+  "ThinkPad": "Lenovo 씽크패드"
+  "요가": "Lenovo 요가"
+  "Yoga": "Lenovo 요가"
+  
+  # 🎮 게이밍
+  "MSI 게이밍": "MSI 게이밍"
+  "MSI GE": "MSI GE"
+  "Razer": "Razer"
+  "레이저": "Razer"
+  
+  # 🎧 오디오 (확실한 것만)
+  "Beats": "Beats"
+  "비츠": "Beats"
+  
+  "Sony WH-1000": "Sony WH-1000"
+  "소니 WH": "Sony WH"
+  
+  "Bose": "Bose"
+  "보즈": "Bose"
+  
+  "JBL": "JBL"
+  "제이비엘": "JBL"
+  
+  # 🍜 식품 (확실한 경우만)
+  "신라면 블랙": "농심 신라면 블랙"
+  "신라면": "농심 신라면"
+  "농심라면": "농심 신라면"
+  "농신라면": "농심 신라면"
+  
+  "불닭볶음면": "삼양 불닭볶음면"
+  "삼양 불닭": "삼양 불닭볶음면"
+  
+  "짜장면": "오뚜기 짜장면"
+  "오뚜기짜장면": "오뚜기 짜장면"
+  
+  "비빔면": "농심 비빔면"
+  "농심비빔면": "농심 비빔면"
+
+# 매핑 예외 (금지 케이스)
+exclusions:
+  # 액세서리가 포함된 경우는 Hard Mapping 스킵
+  note: |
+    다음 키워드가 포함되면 Hard Mapping을 스킵합니다:
+    - 케이스, 커버, 필름, 보호
+    - 거치대, 스탠드, 파우치, 가방
+    - 번들, 세트, 구성
+    
+    예: "아이폰 15 케이스" → Hard Mapping 스킵 (액세서리 감지)
+    → Synonym/Fallback으로 처리
+  
+  keywords_that_skip:
+    - "케이스"
+    - "커버"
+    - "필름"
+    - "거치대"
+    - "세트"
+    - "번들"
+
+# 테스트 케이스
+test_cases:
+  success:
+    - input: "맥북 에어 15"
+      expected: "Apple 맥북 에어 15"
+      reason: "완전 매칭"
+    
+    - input: "MACBOOK"
+      expected: "Apple 맥북"
+      reason: "정규화 후 매칭 (소문자)"
+    
+    - input: "갤럭시북"
+      expected: "Samsung 갤럭시북"
+      reason: "별명 매핑"
+    
+    - input: "그램 16"
+      expected: "LG 그램 16"
+      reason: "모델 포함 매칭"
+  
+  skip_hard_mapping:
+    - input: "아이폰 15 케이스"
+      reason: "액세서리 키워드 감지 → Hard Mapping 스킵"
+      next_stage: "Synonym/Fallback으로 처리"
+    
+    - input: "맥북 프로 필름"
+      reason: "보호 관련 키워드 → Hard Mapping 스킵"
+      next_stage: "Synonym 단계로"
+  
+  fallback_to_synonym:
+    - input: "에어팟 프로 맥스"
+      reason: "'프로', '맥스' 조합은 Hard Mapping 없음 → Synonym으로"
+      expected_synonym: "Apple 에어팟 프로 맥스"
+
+# 문서
+documentation:
+  implementation_guide: |
+    1. YAML 로드 (로딩 순서: meta → rules → mapping)
+    2. mapping 키 정렬 (길이 내림차순)
+    3. 입력 정규화 (소문자, 공백 정리)
+    4. 액세서리 키워드 확인 (skip_if_contains)
+    5. 정렬된 키 순회, 첫 매칭 시 반환
+    6. 매칭 실패 → 다음 단계 (Synonym)
+  
+  priority_order: |
+    Hard Mapping (Level 0)
+      ↓ (매칭 실패)
+    Synonym (Level 2)
+      ↓ (매칭 실패)
+    Fallback Query Generation (Level 2.5)
+      ↓ (검색 실패)
+    Playwright (Fallback)
+  
+  maintenance:
+    - "매월 1일: 검색 실패 로그 분석"
+    - "필요시: 새로운 제품/브랜드 추가"
+    - "테스트: tests/unit/test_hard_mapping.py 실행"
+    - "모니터링: 크롤링 성공률 대시보드 확인"

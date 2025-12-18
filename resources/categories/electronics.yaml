@@ -1,7 +1,0 @@
-# 3단계 방어: 카테고리(도메인)별 일반 룰
-remove_colors: true
-remove_units: true
-remove_accessory_terms: true
-preserve_numbers: true
-preserve_generation_numbers: true
-preserve_connector_tokens: true
