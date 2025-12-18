@@ -2,28 +2,26 @@
 import re
 from typing import Optional
 from src.core.logging import logger
+from src.utils.resource_loader import load_search_substitutions, load_search_categories
 
 
 class DanawaSearchHelper:
     """다나와 검색 최적화 헬퍼 - 다나와 자동완성과 계층적 폴백 검색 활용"""
     
     def __init__(self):
-        # 카테고리별 핵심 토큰 (자동완성에서 자주 보이는 패턴)
+        # 리소스에서 카테고리 설정 로드
+        categories = load_search_categories()
+        
+        # 카테고리별 핵심 토큰
         self.category_keywords = {
-            "earphone": {"이어폰", "에어팟", "버즈", "이어버드", "헤드폰"},
-            "laptop": {"노트북", "랩탑", "맥북", "그램", "갤럭시북"},
-            "monitor": {"모니터", "디스플레이", "패널"},
-            "phone": {"폰", "아이폰", "갤럭시", "핸드폰"},
-            "tablet": {"태블릿", "아이패드"},
+            cat: set(info.get("keywords", [])) 
+            for cat, info in categories.items()
         }
         
         # 카테고리 감지 키워드
         self.category_patterns = {
-            "earphone": r"(이어폰|에어팟|버즈|이어버드|헤드폰|AirPods)",
-            "laptop": r"(노트북|랩탑|맥북|그램|갤럭시북|북)",
-            "monitor": r"(모니터|디스플레이|패널)",
-            "phone": r"(폰|아이폰|갤럭시|핸드폰|스마트폰)",
-            "tablet": r"(태블릿|아이패드|패드)",
+            cat: info.get("pattern", "") 
+            for cat, info in categories.items()
         }
     
     def detect_category(self, product_name: str) -> Optional[str]:
@@ -86,14 +84,7 @@ class DanawaSearchHelper:
             add_candidate(brand)
         
         # 5. 대체 검색어
-        substitutions: dict[str, list[str]] = {
-            "맥북": ["MacBook", "MacBook Air", "Mac"],
-            "아이폰": ["iPhone"],
-            "아이패드": ["iPad"],
-            "에어팟": ["AirPods"],
-            "애플워치": ["Apple Watch"],
-            "갤럭시": ["Galaxy"],
-        }
+        substitutions = load_search_substitutions()
         product_lower = product_name.lower()
         for kr_term, en_terms in substitutions.items():
             if kr_term in product_name or kr_term.lower() in product_lower:

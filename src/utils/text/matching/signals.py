@@ -3,6 +3,7 @@
 from __future__ import annotations
 
 import re
+from src.utils.resource_loader import load_matching_signals
 
 from ..core.cleaning import clean_product_name, split_kr_en_boundary
 
@@ -21,19 +22,8 @@ def extract_model_codes(text: str) -> list[str]:
     mixed_re = re.compile(r"^(?=.*\d)(?=.*[A-Za-z])[A-Za-z0-9][A-Za-z0-9\-_]{2,}$")
     caps_re = re.compile(r"^[A-Z0-9][A-Z0-9\-_]{4,}$")
 
-    blacklist = {
-        "WIN10",
-        "WIN11",
-        "WINDOWS",
-        "HOME",
-        "PRO",
-        "SSD",
-        "HDD",
-        "NVME",
-        "RAM",
-        "PCIE",
-        "PCIe",
-    }
+    signals = load_matching_signals()
+    blacklist = signals["model_code_blacklist"]
 
     codes: list[str] = []
     seen: set[str] = set()
@@ -81,18 +71,9 @@ def extract_product_signals(text: str) -> dict:
     big_numbers = set(re.findall(r"\b\d{3,6}\b", normalized))
 
     named_numbers: dict[str, set[str]] = {}
-    stop_prefix = {
-        "win",
-        "windows",
-        "홈",
-        "home",
-        "pro",
-        "프로",
-        "정품",
-        "리퍼",
-        "새제품",
-        "중고",
-    }
+    signals = load_matching_signals()
+    stop_prefix = signals["named_number_stop_prefixes"]
+    
     for name, num in re.findall(
         r"\b([A-Za-z가-힣]{2,}(?:\s+[A-Za-z가-힣]{2,})?)\s*(\d{1,2})\b",
         normalized,

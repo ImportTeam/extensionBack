@@ -5,6 +5,7 @@ from __future__ import annotations
 import re
 
 from src.core.logging import logger
+from src.utils.resource_loader import load_matching_variants, load_accessory_keywords
 
 from .signals import extract_product_signals
 from .similarity import fuzzy_score
@@ -16,61 +17,9 @@ def is_accessory_trap(query: str, candidate: str) -> bool:
     if not query or not candidate:
         return False
 
-    accessory_keywords = {
-        "케이스",
-        "커버",
-        "키스킨",
-        "스킨",
-        "필름",
-        "보호필름",
-        "강화유리",
-        "거치대",
-        "스탠드",
-        "파우치",
-        "가방",
-        "충전기",
-        "어댑터",
-        "케이블",
-        "허브",
-        "젠더",
-        "독",
-        "도킹",
-        "키보드커버",
-        "키보드덮개",
-        "교체용",
-        "전용",
-        "호환",
-        "리필",
-        "리필용",
-        "스티커",
-        "보호",
-        "케이스형",
-        "키캡",
-        "키패드",
-    }
-
-    main_product_hints = {
-        "노트북",
-        "랩탑",
-        "맥북",
-        "울트라북",
-        "태블릿",
-        "아이패드",
-        "스마트폰",
-        "핸드폰",
-        "아이폰",
-        "갤럭시",
-        "모니터",
-        "tv",
-        "데스크탑",
-        "본체",
-        "카메라",
-        "렌즈",
-        "이어폰",
-        "헤드폰",
-        "스피커",
-        "마우스",
-    }
+    resources = load_accessory_keywords()
+    accessory_keywords = resources["accessory_keywords"]
+    main_product_hints = resources["main_product_hints"]
 
     q_tokens = tokenize_keywords(query)
     c_tokens = tokenize_keywords(candidate)
@@ -104,7 +53,7 @@ def weighted_match_score(query: str, candidate: str) -> float:
 
     # [핵심] 제품군(Pro/Air/Max/Mini/Ultra/FE) 불일치 - 강한 필터
     # iPad, iPhone, Galaxy 등 공통 적용
-    variants = {"pro", "air", "max", "mini", "ultra", "fe", "plus"}
+    variants = load_matching_variants()
     q_lower = query.lower()
     c_lower = candidate.lower()
     

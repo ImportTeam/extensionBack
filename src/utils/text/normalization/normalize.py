@@ -5,6 +5,7 @@ from __future__ import annotations
 import re
 
 from src.core.logging import logger
+from src.utils.resource_loader import load_normalization_rules
 
 from ..core.cleaning import clean_product_name, split_kr_en_boundary
 
@@ -69,82 +70,31 @@ def _normalize_search_query_legacy(text: str) -> str:
     if not text:
         return ""
 
+    # 리소스 로드
+    it_rules = load_normalization_rules(is_it=True)
+    non_it_rules = load_normalization_rules(is_it=False)
+
     def is_likely_it_query(value: str) -> bool:
         if not value:
             return False
 
         v = value.lower()
-
-        non_it_strong = {
-            "라면",
-            "컵라면",
-            "과자",
-            "김치",
-            "참치",
-            "햇반",
-            "우유",
-            "커피",
-            "차",
-            "소스",
-            "간장",
-            "된장",
-            "고추장",
-            "샴푸",
-            "린스",
-            "바디",
-            "세제",
-            "치약",
-            "마스크팩",
-            "화장품",
-        }
-
-        it_signals = {
-            "애플",
-            "apple",
-            "삼성",
-            "lg",
-            "샤오미",
-            "노트북",
-            "맥북",
-            "아이폰",
-            "아이패드",
-            "갤럭시",
-            "에어팟",
-            "버즈",
-            "태블릿",
-            "스마트폰",
-            "이어폰",
-            "헤드폰",
-            "모니터",
-            "그래픽",
-            "rtx",
-            "gtx",
-            "ssd",
-            "usb",
-            "type-c",
-            "usb-c",
-            "m1",
-            "m2",
-            "m3",
-            "m4",
-            "m5",
-            "intel",
-            "i3",
-            "i5",
-            "i7",
-            "i9",
-            "ryzen",
-        }
+        non_it_strong = non_it_rules.get("non_it_strong", [])
+        it_signals = it_rules.get("it_signals", [])
 
         score = 0
         if any(w in v for w in non_it_strong):
             score -= 3
         if any(w in v for w in it_signals):
             score += 2
+        
+        # 용량/단위 패턴
         if re.search(r"\b\d+\s*(gb|tb|mb|khz|mhz|ghz|hz)\b", v):
             score += 2
+        # M칩 패턴
         if re.search(r"\b(m\s*\d+)\b", v, flags=re.IGNORECASE):
             score += 2
+        # 그래픽카드 패턴
         if re.search(r"\b(rtx\s*\d+|gtx\s*\d+)\b", v, flags=re.IGNORECASE):
             score += 2
 
@@ -171,13 +121,14 @@ def _normalize_search_query_legacy(text: str) -> str:
             break
 
     # 🔴 기가차드 수정: "블루투스" -> "투스" 방지를 위한 보호 로직
-    # "블루"가 색상으로 오인되어 분리/삭제되는 것을 방지합니다.
     protected_terms = {"블루투스": "__BT_PROTECT__", "블랙박스": "__BB_PROTECT__"}
     for term, protect in protected_terms.items():
         cleaned = cleaned.replace(term, protect)
 
-    colors = "화이트|블랙|실버|골드|그레이|블루|핑크|레드|그린|퍼플|로즈|샴페인|뉴트럼|차콜|브론즈|건메탈"
-    cleaned = re.sub(f"({colors})([가-힣])", r"\1 \2", cleaned)
+    # 색상 분리 (리소스에서 로드)
+    colors = "|".join(it_rules.get("colors", []))
+    if colors:
+        cleaned = re.sub(f"({colors})([가-힣])", r"\1 \2", cleaned)
 
     # 보호 토큰 복구
     for term, protect in protected_terms.items():
@@ -186,55 +137,60 @@ def _normalize_search_query_legacy(text: str) -> str:
     cleaned = re.sub(r"([가-힣])([A-Z])", r"\1 \2", cleaned)
 
     if is_it:
-        cleaned = re.sub(r"\b\d+\s*(GB|TB|MB|KB)\b", " ", cleaned, flags=re.IGNORECASE)
-        cleaned = re.sub(r"\b(DDR\d+|LPDDR\d+|GDDR\d+)\b", " ", cleaned, flags=re.IGNORECASE)
-        cleaned = re.sub(r"\b(SSD|HDD|NVME|NVMe)\b", " ", cleaned, flags=re.IGNORECASE)
+        # 용량 및 규격 제거
+        units = "|".join(it_rules.get("storage_units", ["GB", "TB", "MB"]))
+        cleaned = re.sub(rf"\b\d+\s*({units})\b", " ", cleaned, flags=re.IGNORECASE)
+        
+        specs = "|".join(it_rules.get("storage_specs", []))
+        if specs:
+            cleaned = re.sub(rf"\b({specs})\b", " ", cleaned, flags=re.IGNORECASE)
 
     if is_it:
+        # 🔴 기가차드 수정: OS 에디션으로서의 Pro/Home만 제거 (iPhone Pro 등 보호)
+        os_names = "|".join(it_rules.get("operating_systems", ["Windows", "Win"]))
         cleaned = re.sub(
-            r"\b(WIN(?:DOWS)?\s*\d+|Windows|HOME|PRO|Home|Pro)\b",
-            " ",
+            rf"\b({os_names})\s*(HOME|PRO|Home|Pro)\b",
+            r"\1",
             cleaned,
             flags=re.IGNORECASE,
         )
+        # 단독 OS 이름 제거
+        cleaned = re.sub(rf"\b({os_names})\b", " ", cleaned, flags=re.IGNORECASE)
 
     cleaned = re.sub(r"\b(\d+)\s*세대\b", r"\1", cleaned, flags=re.IGNORECASE)
     cleaned = re.sub(r"\b세대\b", " ", cleaned, flags=re.IGNORECASE)
+    
     if is_it:
-        cleaned = re.sub(r"\b(인텔|라이젠|AMD)\s+\d+", " ", cleaned, flags=re.IGNORECASE)
+        cpu_brands = "|".join(it_rules.get("cpu_brands", ["인텔", "라이젠", "AMD"]))
+        cleaned = re.sub(rf"\b({cpu_brands})\s+\d+", " ", cleaned, flags=re.IGNORECASE)
         cleaned = re.sub(r"\b시리즈\b", " ", cleaned, flags=re.IGNORECASE)
 
-    if is_it:
-        cleaned = re.sub(r"\b(코어|GHZ|MHZ|GHz|MHz|IPS|VA|FIPS)\b", " ", cleaned, flags=re.IGNORECASE)
-        cleaned = re.sub(r"\b지포스\s+", " ", cleaned, flags=re.IGNORECASE)
-        cleaned = re.sub(
-            r"\b(액티브|노이즈|캔슬링|무선|유선|블루투스|입체음향|돌비)\b",
-            " ",
-            cleaned,
-            flags=re.IGNORECASE,
-        )
-        cleaned = re.sub(r"\b(USB\s*-?\s*C|Type\s*-?\s*C|C\s*타입)\b", " C ", cleaned, flags=re.IGNORECASE)
-        cleaned = re.sub(r"\b(HDMI|DP|Thunderbolt|3\.5mm|이어폰)\b", " ", cleaned, flags=re.IGNORECASE)
-
-    cleaned = re.sub(r"\b(정품|리퍼|새제품|중고|리뉴얼)\b", " ", cleaned, flags=re.IGNORECASE)
+    # 공통 노이즈 제거 (정품, 리퍼 등)
+    conditions = "|".join(non_it_rules.get("product_conditions", []))
+    if conditions:
+        cleaned = re.sub(rf"\b({conditions})\b", " ", cleaned, flags=re.IGNORECASE)
 
     if is_it:
-        cleaned = re.sub(r"\b(패키지|세트|구성|포함|별도|추가)\b", " ", cleaned, flags=re.IGNORECASE)
-        cleaned = re.sub(
-            r"\b(케이스|필름|커버|보호|가방|파우치|포우치|스킨|스티커|도킹|거치대)\b",
-            " ",
-            cleaned,
-            flags=re.IGNORECASE,
-        )
-        cleaned = re.sub(
-            r"\b(화이트|블랙|실버|골드|그레이|블루|핑크|레드|그린|퍼플|로즈|샴페인|뉴트럼|차콜|브론즈|건메탈)\b",
-            " ",
-            cleaned,
-            flags=re.IGNORECASE,
-        )
+        # 기능, 포트, 액세서리 제거
+        features = "|".join(it_rules.get("it_features", []))
+        if features:
+            cleaned = re.sub(rf"\b({features})\b", " ", cleaned, flags=re.IGNORECASE)
+            
+        ports = "|".join(it_rules.get("port_types", []))
+        if ports:
+            cleaned = re.sub(rf"\b({ports})\b", " ", cleaned, flags=re.IGNORECASE)
+            
+        accessories = "|".join(it_rules.get("it_accessories", []))
+        if accessories:
+            cleaned = re.sub(rf"\b({accessories})\b", " ", cleaned, flags=re.IGNORECASE)
+
+        # 색상 제거
+        if colors:
+            cleaned = re.sub(rf"\b({colors})\b", " ", cleaned, flags=re.IGNORECASE)
 
     cleaned = re.sub(r"\b([A-BD-Z])\s+", " ", cleaned)
 
+    # 숫자+단위 조합 제거
     cleaned = re.sub(
         r"\b\d{1,2}\b(?=\s*(코어|core|스레드|thread|와트|w|hz|Hz|GHz|MHz)\b)",
         " ",
