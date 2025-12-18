@@ -1,43 +1,73 @@
-"""API 엔드포인트 - 가격 검색 및 통계"""
+"""Price Routes (Engine Layer) - Refactored to use SearchOrchestrator
+
+HTTP Layer가 Engine Layer로 요청을 위임하는 단순한 Translator 역할만 수행합니다.
+"""
+
 import asyncio
-from fastapi import APIRouter, BackgroundTasks, Depends
+from typing import Optional
+
+from fastapi import APIRouter, BackgroundTasks, Depends, HTTPException
 from sqlalchemy.orm import Session
 
+from src.core.config import settings
 from src.core.database import get_db
+from src.core.logging import logger
+from src.crawlers.danawa import FastPathExecutor, SlowPathExecutor
+from src.engine import BudgetConfig, CacheAdapter, SearchOrchestrator, SearchStatus
+from src.repositories.impl.search_log_repository import SearchLogRepository
 from src.schemas.price_schema import (
+    PriceData,
     PriceSearchRequest,
     PriceSearchResponse,
-    PriceData,
-    StatisticsResponse,
-    PopularQuery
 )
-from src.services.impl.price_search_service import PriceSearchService
 from src.services.impl.cache_service import CacheService
-from src.repositories.impl.search_log_repository import SearchLogRepository
-from src.core.logging import logger
+from src.utils.text_utils import normalize_for_search_query
 from src.utils.url import extract_pcode_from_url
-from src.core.config import settings
 
 router = APIRouter(prefix="/api/v1", tags=["price"])
 
-# 싱글톤 서비스 (FastAPI 앱 생명주기에서 관리)
-_cache_service = None
+# 싱글톤 서비스
+_cache_service: Optional[CacheService] = None
+_orchestrator: Optional[SearchOrchestrator] = None
 
 
 def get_cache_service() -> CacheService:
-    """CacheService 인스턴스 제공"""
+    """CacheService 싱글톤"""
     global _cache_service
     if _cache_service is None:
         _cache_service = CacheService()
     return _cache_service
 
 
-def get_price_service(
+def get_orchestrator(
     cache_service: CacheService = Depends(get_cache_service),
-    db: Session = Depends(get_db),
-) -> PriceSearchService:
-    """PriceSearchService 인스턴스 제공"""
-    return PriceSearchService(cache_service, db_session=db)
+) -> SearchOrchestrator:
+    """SearchOrchestrator 싱글톤
+
+    Engine Layer의 진입점을 제공합니다.
+    """
+    global _orchestrator
+    if _orchestrator is None:
+        cache_adapter = CacheAdapter(cache_service)
+        fastpath = FastPathExecutor()
+        slowpath = SlowPathExecutor()
+
+        # 12초 예산 설정
+        budget_config = BudgetConfig(
+            total_budget=12.0,
+            cache_timeout=0.2,
+            fastpath_timeout=3.0,
+            slowpath_timeout=9.0,
+        )
+
+        _orchestrator = SearchOrchestrator(
+            cache_service=cache_adapter,
+            fastpath_executor=fastpath,
+            slowpath_executor=slowpath,
+            budget_config=budget_config,
+        )
+
+    return _orchestrator
 
 
 @router.post("/price/search", response_model=PriceSearchResponse)
@@ -45,116 +75,154 @@ async def search_price(
     request: PriceSearchRequest,
     background_tasks: BackgroundTasks,
     db: Session = Depends(get_db),
-    price_service: PriceSearchService = Depends(get_price_service)
+    orchestrator: SearchOrchestrator = Depends(get_orchestrator),
 ):
+    """최저가 검색 API (Engine Layer)
+
+    HTTP → Engine → Cache/FastPath/SlowPath 파이프라인으로 실행
+
+    Flow:
+        1. HTTP Request 수신
+        2. 쿼리 정규화
+        3. Engine에 위임 (Cache → FastPath → SlowPath)
+        4. 결과를 HTTP Response로 변환
+        5. 백그라운드로 로그 저장
     """
-    최저가 검색 API
-    
-    1. Redis 캐시 확인 (HIT: 즉시 반환)
-    2. 캐시 미스 시 다나와 크롤링
-    3. 결과를 Redis에 캐싱
-    4. 로그를 DB에 백그라운드로 저장
-    """
-    logger.info(f"Search request: {request.product_name}")
-    
-    # URL에서 pcode 추출 (product_code가 없으면)
+    logger.info(f"[API] Search request: product_name='{request.product_name}'")
+
+    # URL에서 pcode 추출
     product_code = request.product_code
     if not product_code and request.current_url:
         product_code = extract_pcode_from_url(request.current_url)
-        logger.info(f"Extracted pcode from URL: {product_code}")
-    
+        logger.debug(f"[API] Extracted pcode from URL: {product_code}")
+
+    # 쿼리 정규화
+    normalized_query = normalize_for_search_query(request.product_name)
+
     try:
-        # 최저가 검색
-        # FE(브라우저) 타임아웃(15s)보다 짧게 하드 캡을 걸어 응답이 끊기는 문제를 방지
+        # Engine Layer로 위임 (14초 타임아웃)
         result = await asyncio.wait_for(
-            price_service.search_price(
-                product_name=request.product_name,
-                current_price=request.current_price,
-                product_code=product_code,
-            ),
+            orchestrator.search(normalized_query),
             timeout=float(getattr(settings, "api_price_search_timeout_s", 14.0)),
         )
-        
-        # 백그라운드로 로그 저장
+
+        # 백그라운드 로그 저장
         background_tasks.add_task(
-            price_service.log_search,
+            _log_search,
             db=db,
             query_name=request.product_name,
             origin_price=request.current_price,
-            found_price=result["lowest_price"] if result["status"] != "FAIL" else None,
-            status=result["status"]
+            found_price=result.price if result.is_success else None,
+            status="SUCCESS" if result.is_success else "FAIL",
+            source=result.source,
+            elapsed_ms=result.elapsed_ms,
         )
-        
-        # 응답 생성
-        if result["status"] != "FAIL":
+
+        # 성공 응답
+        if result.is_success:
+            is_cheaper = (
+                result.price < request.current_price
+                if request.current_price
+                else False
+            )
+            price_diff = (
+                request.current_price - result.price if request.current_price else 0
+            )
+
             return PriceSearchResponse(
                 status="success",
                 data=PriceData(
-                    product_name=result.get("product_name", request.product_name),
-                    is_cheaper=result["is_cheaper"],
-                    price_diff=result["price_diff"],
-                    lowest_price=result["lowest_price"],
-                    link=result["link"],
-                    mall=result.get("mall"),
-                    free_shipping=result.get("free_shipping"),
-                    top_prices=result.get("top_prices"),
-                    price_trend=result.get("price_trend")
+                    product_name=request.product_name,
+                    is_cheaper=is_cheaper,
+                    price_diff=price_diff,
+                    lowest_price=result.price,
+                    link=result.product_url,
+                    mall="다나와",
+                    free_shipping=None,  # TODO: 배송비 정보
+                    top_prices=None,  # TODO: TOP 가격 정보
+                    source=result.source,
+                    elapsed_ms=result.elapsed_ms,
                 ),
-                message=result["message"]
+                message="최저가를 찾았습니다.",
             )
-        else:
-            return PriceSearchResponse(
-                status="fail",
-                data=None,
-                message=result["message"]
-            )
-    
-    except Exception as e:
-        logger.error(f"API Error: {e}")
-        
-        # 에러 로그 저장
-        background_tasks.add_task(
-            price_service.log_search,
-            db=db,
-            query_name=request.product_name,
-            origin_price=request.current_price,
-            found_price=None,
-            status="FAIL"
-        )
-        
+
+        # 실패 응답
+        error_message = _get_error_message(result.status)
         return PriceSearchResponse(
-            status="fail",
+            status="error",
             data=None,
-            message="서버 오류가 발생했습니다."
+            message=error_message,
+            error_code=result.status.value,
+        )
+
+    except asyncio.TimeoutError:
+        logger.error(f"[API] Timeout: query='{normalized_query}'")
+        return PriceSearchResponse(
+            status="error",
+            data=None,
+            message="검색 시간이 초과되었습니다. 잠시 후 다시 시도해주세요.",
+            error_code="TIMEOUT",
+        )
+    except Exception as e:
+        logger.error(f"[API] Search failed: query='{normalized_query}'", exc_info=True)
+        return PriceSearchResponse(
+            status="error",
+            data=None,
+            message=f"검색 중 오류가 발생했습니다: {str(e)}",
+            error_code="INTERNAL_ERROR",
         )
 
 
-@router.get("/stats", response_model=StatisticsResponse)
-async def get_statistics(db: Session = Depends(get_db)):
-    """
-    통계 API
-    
-    - 총 검색 횟수
-    - 캐시 히트율
-    - 인기 검색어 Top 5
-    """
-    repo = SearchLogRepository(db)
-    
-    total_searches = repo.get_total_count()
-    cache_hits = repo.get_cache_hit_count()
-    hit_rate = (cache_hits / total_searches * 100) if total_searches > 0 else 0
-    
-    popular_queries_data = repo.get_popular_queries(limit=5)
-    popular_queries = [
-        PopularQuery(name=name, count=count)
-        for name, count in popular_queries_data
-    ]
-    
-    logger.info(f"Statistics requested: {total_searches} searches, {hit_rate:.2f}% hit rate")
-    
-    return StatisticsResponse(
-        total_searches=total_searches,
-        cache_hits=cache_hits,
-        hit_rate=round(hit_rate, 2),
-        popular_queries=popular_queries
-    )
+def _get_error_message(status: SearchStatus) -> str:
+    """상태별 에러 메시지 반환"""
+    messages = {
+        SearchStatus.TIMEOUT: "검색 시간이 초과되었습니다.",
+        SearchStatus.PARSE_ERROR: "검색 결과를 처리하는 중 오류가 발생했습니다.",
+        SearchStatus.BLOCKED: "일시적으로 검색이 제한되었습니다. 잠시 후 다시 시도해주세요.",
+        SearchStatus.NO_RESULTS: "검색 결과를 찾을 수 없습니다.",
+        SearchStatus.BUDGET_EXHAUSTED: "검색 시간이 초과되었습니다.",
+    }
+    return messages.get(status, "검색 중 오류가 발생했습니다.")
+
+
+def _log_search(
+    db: Session,
+    query_name: str,
+    origin_price: Optional[int],
+    found_price: Optional[int],
+    status: str,
+    source: Optional[str] = None,
+    elapsed_ms: Optional[float] = None,
+):
+    """검색 로그 저장 (백그라운드)"""
+    try:
+        repo = SearchLogRepository(db)
+        repo.create(
+            query_name=query_name,
+            origin_price=origin_price,
+            found_price=found_price,
+            status=status,
+            source=source,
+            elapsed_ms=elapsed_ms,
+        )
+        db.commit()
+        logger.debug(f"[API] Search log saved: query='{query_name}', status={status}")
+    except Exception as e:
+        logger.error(f"[API] Failed to save search log: {e}")
+        db.rollback()
+
+
+# 통계 API는 추후 Engine Layer로 마이그레이션 예정
+# 현재는 legacy 로직 사용
+@router.get("/price/statistics")
+async def get_search_statistics(db: Session = Depends(get_db)):
+    """검색 통계 API (Legacy)"""
+    from src.api.routes.price_routes_legacy import get_statistics
+    return await get_statistics(db)
+
+
+@router.get("/price/popular")
+async def get_popular_queries_api(db: Session = Depends(get_db)):
+    """인기 검색어 API (Legacy)"""
+    from src.api.routes.price_routes_legacy import get_popular_queries
+    return await get_popular_queries(db)

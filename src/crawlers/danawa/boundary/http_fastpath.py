@@ -101,14 +101,17 @@ class DanawaHttpFastPath:
         deadline = loop.time() + (total_timeout_ms / 1000.0)
 
         # 검색 페이지와 상품 상세 페이지 모두를 처리해야 하므로 예산을 분리해 사용
-        search_budget_ms = int(max(500, total_timeout_ms * 0.6))
+        # 🔴 기가차드 최종 실무 해결: 단순 고정값
+        # total_timeout_ms=12000 → search_budget_ms=9600 (80%), product=2400
+        search_budget_ms = int(max(500, total_timeout_ms * 0.8))
         product_budget_floor_ms = 300
         if search_budget_ms > total_timeout_ms - product_budget_floor_ms:
             search_budget_ms = max(500, total_timeout_ms - product_budget_floor_ms)
         search_deadline = loop.time() + (search_budget_ms / 1000.0)
 
-        max_candidates = 3
-        max_pcodes_per_candidate = 4
+        # 첫 후보만 시도 (성공 시 끝, 실패 시 Playwright로 바로 넘어가기)
+        max_candidates = 1
+        max_pcodes_per_candidate = 1  # 첫 pcode만 (여러 개 시도하면 예산 부족)
 
         def _is_likely_accessory(product_name: str) -> bool:
             """상품명으로 명백한 액세서리(필름/케이스 등) 오탐을 완화.
@@ -132,8 +135,8 @@ class DanawaHttpFastPath:
         chosen_pcode: Optional[str] = None
         chosen_result: Optional[dict] = None
         seen_pcodes: set[str] = set()  # 🔴 기가차드 수정: 중복 분석 방지
-        # 개별 요청마다 고정 타임아웃 적용 (phase budget과 분리)
-        per_try_ms = int(getattr(settings, "crawler_http_request_timeout_ms", getattr(settings, "crawler_http_timeout_ms", 4000)))
+        # 개별 요청 타임아웃: 고정값 8s (다나와 페이지 완전 로드에 필요)
+        per_try_ms = 8000
         
         for idx, cand in enumerate(candidates[:max_candidates]):
             # IMPORTANT:

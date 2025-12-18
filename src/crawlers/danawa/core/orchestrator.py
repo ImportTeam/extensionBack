@@ -16,7 +16,8 @@ from typing import Dict, Optional
 from src.core.config import settings
 from src.core.exceptions import CrawlerException, ProductNotFoundException
 from src.core.logging import logger
-from src.utils.text import clean_product_name, normalize_search_query
+from src.utils.text_utils import clean_product_name, build_cache_key, normalize_for_search_query
+from src.utils.text.normalization import normalize_search_query
 
 from src.crawlers.danawa.boundary import (
     TimeoutManager,
@@ -86,7 +87,8 @@ async def search_lowest_price(
     timeout_mgr = TimeoutManager(total_budget_ms)
     cb = crawler._get_circuit_breaker()
 
-    cleaned_name = clean_product_name(product_name)  # 순수 정제만
+    normalized_search_term = normalize_for_search_query(product_name)
+    cleaned_name = build_cache_key(normalized_search_term)  # 순수 정제만
     logger.info(f"[CRAWL] Starting search: {product_name} (HTTP: 10s, PW: 15s)")
 
     # 🔴 기가차드 수정: 검색 후보를 미리 생성하여 HTTP와 Playwright에서 공유 (중복 분석 방지)
@@ -110,7 +112,7 @@ async def search_lowest_price(
                     if is_broad_query(product_name) or product_name.count(" ") < 1:
                         logger.warning(f"[HTTP-FASTPATH] ⏩ Skipping HTTP for broad/short query: '{product_name}'")
                     else:
-                        logger.info(f"[HTTP-FASTPATH] Phase 1 - Attempting curl-based HTTP search (timeout: 10s)")
+                        logger.info(f"[HTTP-FASTPATH] Phase 1 - Attempting curl-based HTTP search (timeout: 12s)")
                         
                         # HTTP 페이즈 시작
                         timeout_mgr.start_phase()
@@ -118,9 +120,9 @@ async def search_lowest_price(
                             crawler._http.search_lowest_price(
                                 query=primary_query,
                                 candidates=candidates,
-                                total_timeout_ms=10000, # 10s
+                                total_timeout_ms=12000, # 12s (단순하게 충분히 확보)
                             ),
-                            timeout=12.0, # 여유분 포함
+                            timeout=14.0, # 여유분 포함
                         )
                         if fast:
                             logger.info(f"[HTTP-FASTPATH] ✅ Phase 1 SUCCESS (elapsed: {timeout_mgr.phase_elapsed_ms}ms)")

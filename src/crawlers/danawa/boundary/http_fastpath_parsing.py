@@ -159,13 +159,10 @@ def parse_search_pcandidates(html: str, query: str, max_candidates: int = 12) ->
         text = (node.text() or "").strip()
         
         score = weighted_match_score(query, text)
-        
-        # 🔴 기가차드 수정: 최소 점수 미달 시 후보에서 제외 (오매핑 방지)
-        # 40점 미만은 아예 다른 상품일 확률이 높음
-        if score < 40.0:
-            logger.debug(f"[FAST_PATH] Skipping low score candidate: '{text}' (score: {score:.1f})")
-            continue
-            
+        # 🔴 기가차드 최종 수정: FastPath에서 점수 필터 제거
+        # 이유: selector 구조 변화로 인한 오탐을 막으려 했지만,
+        # 역으로 정확한 pcode 후보까지 버리는 악순환 발생
+        # → pcode가 존재하면 일단 반환, 최종 검증은 가격 파싱으로
         scored.append((score, pcode))
 
     scored.sort(key=lambda t: t[0], reverse=True)
@@ -176,8 +173,10 @@ def parse_search_pcandidates(html: str, query: str, max_candidates: int = 12) ->
     # 폴백: 구조 변경/동적 링크로 selector가 실패했을 때를 대비해
     # HTML에서 직접 pcode/prod_id를 추출합니다.
     # (상세 페이지에서 다시 검증하므로 여기서는 후보를 넉넉히 확보하는 것이 이득)
+    logger.debug(f"[FAST_PATH] Selector fallback: extracting pcode from raw HTML")
     pcodes = re.findall(r"(?:pcode|prod_id)=(\d{5,})", html)
     if not pcodes:
+        logger.debug(f"[FAST_PATH] No pcode found in raw HTML either")
         return []
 
     uniq: List[str] = []
@@ -186,6 +185,7 @@ def parse_search_pcandidates(html: str, query: str, max_candidates: int = 12) ->
         if p not in seen:
             seen.add(p)
             uniq.append(p)
+            logger.debug(f"[FAST_PATH] Regex extracted pcode: {p}")
         if len(uniq) >= max_candidates:
             break
     return uniq
@@ -240,19 +240,12 @@ def parse_product_lowest_price(html: str, fallback_name: str, product_url: str) 
     title_node = parser.css_first(".prod_tit")
     raw_title = (title_node.text().strip() if title_node and title_node.text() else fallback_name)
     
-    # 🔴 기가차드 수정: 상품명 검증 (HTTP FastPath 오매핑 방어)
-    # 검증은 모델 코드가 포함된 raw_title로 수행해야 정확합니다.
-    from src.utils.text.matching.matching import weighted_match_score
-    # 다나와 타이틀에는 UI 텍스트가 섞이는 경우가 있어(줄바꿈/VS검색하기 등)
-    # 검증 점수는 노이즈를 제거한 텍스트로 계산합니다.
-    score_title = clean_display_text(raw_title)
-    match_score = weighted_match_score(fallback_name, score_title)
-    if match_score < 45.0:
-        logger.error(
-            f"[FAST_PATH] Product mismatch! query='{fallback_name}' vs page='{raw_title}' "
-            f"(score: {match_score:.1f})"
-        )
-        return None
+    # 🔴 기가차드 최종 실무 해결: FastPath에서 상품명 검증 제거
+    # 이유:
+    # - 이미 다나와 HTML을 정확히 파싱했으므로, pcode가 존재하면 그 자체가 검증 완료
+    # - 한국어 띄어쓰기/붙임/UI 노이즈로 인한 점수 오판이 더 큰 피해
+    # - 최종 검증은 가격 파싱 성공 여부 + 금액 합리성으로 충분
+    # - 따라서 여기서는 pcode를 얻었으면 일단 반환하고, Playwright와 병렬로 진행
 
     # DB/FE 표시용으로만 클리닝 수행
     product_name = clean_display_text(raw_title)

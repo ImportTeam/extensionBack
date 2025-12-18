@@ -14,7 +14,7 @@ from typing import Any, Dict, Iterable, Optional, Set, Tuple
 
 from src.core.logging import logger
 
-from ..core.cleaning import clean_product_name, split_kr_en_boundary
+from src.utils.text_utils import clean_product_name, split_kr_en_boundary
 
 try:
     import yaml  # type: ignore

@@ -7,7 +7,7 @@ import re
 from src.core.logging import logger
 from src.utils.resource_loader import load_normalization_rules
 
-from ..core.cleaning import clean_product_name, split_kr_en_boundary
+from src.utils.text_utils import clean_product_name, split_kr_en_boundary
 
 
 def normalize_search_query(text: str, skip_hard_mapping: bool = False) -> str:

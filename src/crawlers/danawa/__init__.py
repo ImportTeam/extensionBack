@@ -4,9 +4,17 @@
 """
 
 from .core import DanawaCrawler, search_lowest_price
+from .executor import SearchExecutor
+from .result import CrawlResult
+from .fastpath_executor import FastPathExecutor
+from .slowpath_executor import SlowPathExecutor
 
 __all__ = [
     "DanawaCrawler",
     "search_lowest_price",
+    "SearchExecutor",
+    "CrawlResult",
+    "FastPathExecutor",
+    "SlowPathExecutor",
 ]
 

@@ -9,6 +9,8 @@ from src.repositories.impl.search_log_repository import SearchLogRepository
 from src.repositories.impl.search_failure_repository import SearchFailureRepository
 from src.repositories.impl.price_cache_repository import PriceCacheRepository
 from src.utils.search import DanawaSearchHelper
+from src.utils.text_utils import build_cache_key, normalize_for_search_query
+from src.utils.text.normalization import normalize_search_query
 from src.core.logging import logger
 from src.core.exceptions import ProductNotFoundException, CrawlerException
 from src.core.config import settings
@@ -56,11 +58,8 @@ class PriceSearchService:
             }
         """
         # 검색어를 먼저 정규화하여 캐시 키와 검색 일관성 유지
-        from src.utils.text import clean_product_name, normalize_search_query
-        
-        # 정규화된 상품명으로 캐시 키 생성
-        normalized_name = normalize_search_query(product_name) or clean_product_name(product_name)
-        search_key = clean_product_name(normalized_name)
+        normalized_name = normalize_for_search_query(product_name)
+        search_key = build_cache_key(normalized_name)
         
         logger.info(f"Search request: {product_name}")
         logger.info(f"Normalized query for search: {normalized_name}")

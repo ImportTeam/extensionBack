@@ -23,13 +23,14 @@ class Settings(BaseSettings):
 
     # 하이브리드(HTTP Fast Path → Playwright Fallback) 성능 설정
     # NOTE: 기본값은 '안정성 우선'으로 여유있게 설정합니다.
-    # - crawler_http_timeout_ms: HTTP fast path 전체 예산
+    # - crawler_http_timeout_ms: HTTP fast path 전체 예산 (10초)
     # - crawler_http_request_timeout_ms: HTTP 단일 요청 타임아웃(검색 페이지 등)
+    #   → 다나와는 1~2MB 페이지를 5~7초에 로드하므로 7초로 설정
     # - crawler_http_product_timeout_ms: HTTP 상품 상세 페이지 타임아웃
     crawler_total_budget_ms: int = 12000
-    crawler_http_timeout_ms: int = 9000
-    crawler_http_request_timeout_ms: int = 5000
-    crawler_http_product_timeout_ms: int = 7000
+    crawler_http_timeout_ms: int = 10000
+    crawler_http_request_timeout_ms: int = 7000
+    crawler_http_product_timeout_ms: int = 6000
     crawler_http_impersonate: str = "chrome110"
     crawler_http_max_clients: int = 20
     crawler_enable_price_trend: bool = False
