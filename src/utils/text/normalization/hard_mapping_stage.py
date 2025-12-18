@@ -7,7 +7,8 @@ from typing import Optional
 
 from src.core.logging import logger
 
-from .hard_mapping_loader import load_hard_mapping, get_sorted_mapping_keys
+from .hard_mapping_loader import load_hard_mapping, get_sorted_mapping_keys, get_hard_mapping_yaml_path
+from .hard_mapping_utils import normalize_for_hard_mapping_match
 
 
 class HardMappingStage:
@@ -42,12 +43,8 @@ class HardMappingStage:
         
         try:
             import yaml
-            import os
             
-            yaml_path = os.path.join(
-                os.path.dirname(__file__),
-                "../../../resources/hard_mapping.yaml"
-            )
+            yaml_path = get_hard_mapping_yaml_path()
             
             with open(yaml_path, "r", encoding="utf-8") as f:
                 data = yaml.safe_load(f)
@@ -73,8 +70,12 @@ class HardMappingStage:
             False = 안전함 (Hard Mapping 진행)
         """
         text_lower = text.lower()
-        
-        for keyword in HardMappingStage.ACCESSORY_KEYWORDS:
+
+        rules = HardMappingStage.load_meta_rules() or {}
+        configured = rules.get("skip_if_contains") or []
+        keywords = set(HardMappingStage.ACCESSORY_KEYWORDS) | {str(x) for x in configured}
+
+        for keyword in keywords:
             if keyword in text_lower:
                 logger.debug(f"[Stage 1] Accessory detected: '{keyword}' in '{text}'")
                 return True
@@ -100,31 +101,8 @@ class HardMappingStage:
         Returns:
             정규화된 입력 (매칭용)
         """
-        if not text:
-            return ""
-        
-        normalized = text
-        
-        # 1️⃣ 소문자화
-        normalized = normalized.lower()
-        logger.debug(f"[Stage 2] After lowercase: '{normalized}'")
-        
-        # 2️⃣ 다중 공백 → 단일 공백
-        normalized = re.sub(r'\s+', ' ', normalized).strip()
-        logger.debug(f"[Stage 2] After whitespace normalize: '{normalized}'")
-        
-        # 3️⃣ 한글-영문 경계에 공백 삽입
-        normalized = re.sub(r'(?<=[\uAC00-\uD7A3])(?=[A-Za-z])', ' ', normalized)
-        normalized = re.sub(r'(?<=[A-Za-z])(?=[\uAC00-\uD7A3])', ' ', normalized)
-        logger.debug(f"[Stage 2] After KR-EN boundary: '{normalized}'")
-        
-        # 4️⃣ 특수문자 제거 (하이픈, 언더스코어만 보존)
-        normalized = re.sub(r'[^\w\s\-_가-힣]', '', normalized)
-        logger.debug(f"[Stage 2] After special char removal: '{normalized}'")
-        
-        # 5️⃣ 다시 공백 정리
-        normalized = re.sub(r'\s+', ' ', normalized).strip()
-        
+        normalized = normalize_for_hard_mapping_match(text)
+        logger.debug(f"[Stage 2] Normalized for matching: '{normalized}'")
         return normalized
     
     @staticmethod
