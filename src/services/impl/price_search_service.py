@@ -63,7 +63,8 @@ class PriceSearchService:
         search_key = clean_product_name(normalized_name)
         
         logger.info(f"Search request: {product_name}")
-        logger.debug(f"Normalized to: {normalized_name}")
+        logger.info(f"Normalized query for search: {normalized_name}")
+        logger.debug(f"Cache key: {search_key}")
 
         # 1. 캐시 확인
         cached = self.cache_service.get(search_key)
@@ -109,8 +110,10 @@ class PriceSearchService:
         
         try:
             async with DanawaCrawler() as crawler:
-                # 캐시는 정규화된 키를 쓰되, 크롤링은 원본명을 사용해 신호 손실을 줄입니다.
-                result = await crawler.search_lowest_price(product_name, product_code=product_code)
+                # ✅ 캐시와 크롤링 모두 정규화된 쿼리 사용
+                # 이전: 원본 product_name을 크롤러에 전달 → 중복 정규화 + 신호 손실
+                # 개선: 정규화된 normalized_name을 직접 전달
+                result = await crawler.search_lowest_price(normalized_name, product_code=product_code)
             
             if not result:
                 msg = "검색 결과를 찾을 수 없습니다."

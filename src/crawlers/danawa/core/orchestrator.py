@@ -31,14 +31,18 @@ async def search_lowest_price(
     product_name: str,
     product_code: Optional[str] = None,
 ) -> Optional[Dict]:
-    """다나와에서 상품 검색 후 최저가 반환 (HTTP → Playwright)."""
+    """다나와에서 상품 검색 후 최저가 반환 (HTTP → Playwright).
+    
+    📝 Note: product_name은 이미 정규화된 쿼리입니다.
+    - PriceSearchService에서 normalize_search_query() 적용 후 전달
+    - 여기서는 순수 정제(clean)만 수행, 재정규화는 하지 않음
+    """
     total_budget_ms = int(getattr(settings, "crawler_total_budget_ms", 4000))
     timeout_mgr = TimeoutManager(total_budget_ms)
     cb = crawler._get_circuit_breaker()
 
-    cleaned_name = clean_product_name(product_name)
-    normalized_name = normalize_search_query(product_name)
-    logger.info(f"[CRAWL] Starting search for: {cleaned_name} (budget: {total_budget_ms}ms)")
+    cleaned_name = clean_product_name(product_name)  # 순수 정제만
+    logger.info(f"[CRAWL] Starting search with normalized query: {product_name} (budget: {total_budget_ms}ms)")
 
     page = None
     try:
@@ -53,6 +57,7 @@ async def search_lowest_price(
                     from src.utils.search import DanawaSearchHelper
 
                     helper = DanawaSearchHelper()
+                    # ✅ product_name은 이미 정규화되었으므로, 추가 변형만 생성
                     candidates = helper.generate_search_candidates(product_name)
                     
                     fast = await asyncio.wait_for(

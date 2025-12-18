@@ -2,25 +2,31 @@
 
 FastAPI + Playwright 기반 다나와 최저가 크롤링 서비스
 
-## 🚀 빠른 시작
-
-### 1. Playwright 설치
+## 빠른 시작
 
 ```bash
-playwright install chromium
+source ./venv/bin/activate 
+#$ 가상환경 활성화
+```
+<br>
+
+
+```bash
+pip install -r ./requirements.txt
+# package 설치
 ```
 
 ### 2. 환경 변수 설정
 
 ```bash
 cp .env.example .env
-# .env 파일에 Redis, PostgreSQL URL 설정
+# .env example을 확인하세요
 ```
 
 ### 3. 서버 실행
 
 ```bash
-python main.py
+pnpm start 
 ```
 
 서버: `http://0.0.0.0:8000`
@@ -28,10 +34,10 @@ python main.py
 ## 🧪 테스트 실행
 
 ```bash
-pytest tests/ -v
+pnpm test
 ```
 
-**결과**: ✅ 35개 테스트 전부 통과
+<br>
 
 ## 📁 프로젝트 구조
 
@@ -49,7 +55,7 @@ src/
 main.py                     # 진입점 (12줄)
 ```
 
-## 🎯 주요 기능
+## 주요 기능
 
 1. **Cache-First 전략**: Redis 6시간 TTL
 2. **2단계 크롤링**: 다나와 검색 → 상품 상세 페이지
@@ -70,14 +76,14 @@ main.py                     # 진입점 (12줄)
 
 Redis + PostgreSQL 상태 체크
 
-## 🛠️ 기술 스택
+## 기술 스택
 
 - FastAPI 0.109.0
 - Playwright 1.41.0 (Headless Chromium)
 - Redis (Upstash) + PostgreSQL (Neon)
 - pytest + mypy
 
-## 📊 코드 품질
+## 코드 품질
 
 - **커버리지**: 65% (API 90%+, Utils 90%+)
 - **타입 안전**: 전체 코드 타입 힌트
