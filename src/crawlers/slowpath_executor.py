@@ -51,8 +51,8 @@ class SlowPathExecutor(SearchExecutor):
             ProductNotFoundException: 상품을 찾을 수 없음
             CrawlerException: 크롤링 실패
         """
-        from src.crawlers.danawa.playwright.search import search_product
-        from src.crawlers.danawa.playwright.detail import get_product_lowest_price
+        from src.crawlers.playwright.search import search_product
+        from src.crawlers.playwright.detail import get_product_lowest_price
 
         logger.debug(f"[SlowPath] Executing: query='{query}', timeout={timeout:.2f}s")
 

@@ -6,8 +6,7 @@ from contextlib import asynccontextmanager
 from src.core.config import settings
 from src.core.database import init_db
 from src.core.logging import logger
-from src.api import health_router, price_router
-from src.routes import analytics_router
+from src.api import health_router, price_router, analytics_router
 
 
 @asynccontextmanager
@@ -19,7 +18,7 @@ async def lifespan(app: FastAPI):
     # 필요하면 env로 crawler_playwright_warmup=true 설정하여 warmup 가능
     if getattr(settings, "crawler_playwright_warmup", False):
         try:
-            from src.crawlers.danawa import DanawaCrawler
+            from src.crawlers import DanawaCrawler
 
             await DanawaCrawler.warmup()
         except Exception:
@@ -29,7 +28,7 @@ async def lifespan(app: FastAPI):
     yield
     logger.info("Shutting down application...")
     try:
-        from src.crawlers.danawa import DanawaCrawler
+        from src.crawlers import DanawaCrawler
         from src.crawlers.http_client import shutdown_shared_http_client
 
         await DanawaCrawler.shutdown_shared_browser()

@@ -4,7 +4,7 @@ from typing import Optional, List
 from datetime import datetime, timedelta
 from sqlalchemy.orm import Session
 from sqlalchemy import desc, func
-from src.repositories.models.search_failure import SearchFailure
+from src.repositories.models import SearchFailure
 
 
 class SearchFailureRepository:

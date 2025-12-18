@@ -1,4 +1,4 @@
-from src.crawlers.danawa.boundary.http_fastpath_parsing import (
+from src.crawlers.boundary.http_fastpath_parsing import (
     extract_pcode_from_href,
     has_product_fingerprint,
     has_search_fingerprint,

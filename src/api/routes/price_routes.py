@@ -12,7 +12,7 @@ from sqlalchemy.orm import Session
 from src.core.config import settings
 from src.core.database import get_db
 from src.core.logging import logger
-from src.crawlers.danawa import FastPathExecutor, SlowPathExecutor
+from src.crawlers import FastPathExecutor, SlowPathExecutor
 from src.engine import BudgetConfig, CacheAdapter, SearchOrchestrator, SearchStatus
 from src.repositories.impl.search_log_repository import SearchLogRepository
 from src.schemas.price_schema import (

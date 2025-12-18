@@ -4,7 +4,7 @@ from typing import Optional, Dict, Any
 from sqlalchemy.orm import Session
 
 from src.services.impl.cache_service import CacheService
-from src.crawlers.danawa import DanawaCrawler
+from src.crawlers import DanawaCrawler
 from src.repositories.impl.search_log_repository import SearchLogRepository
 from src.repositories.impl.search_failure_repository import SearchFailureRepository
 from src.repositories.impl.price_cache_repository import PriceCacheRepository

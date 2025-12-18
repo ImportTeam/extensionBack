@@ -19,13 +19,13 @@ from src.core.logging import logger
 from src.utils.text_utils import clean_product_name, build_cache_key, normalize_for_search_query
 from src.utils.text.normalization import normalize_search_query
 
-from src.crawlers.danawa.boundary import (
+from src.crawlers.boundary import (
     TimeoutManager,
     FastPathNoResults,
     FastPathProductFetchFailed,
 )
-from src.crawlers.danawa.playwright.search import search_product
-from src.crawlers.danawa.playwright.detail import get_product_lowest_price
+from src.crawlers.playwright.search import search_product
+from src.crawlers.playwright.detail import get_product_lowest_price
 
 
 def is_broad_query(product_name: str) -> bool:

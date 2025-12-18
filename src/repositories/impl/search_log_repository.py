@@ -4,7 +4,7 @@ from datetime import datetime, timedelta
 from sqlalchemy.orm import Session
 from sqlalchemy import func, desc
 
-from src.repositories.models import SearchLog  # models.py에서 직접 (models/ 디렉토리 아님)
+from src.repositories.models import SearchLog
 from src.core.logging import logger
 from src.core.exceptions import DatabaseException
 

@@ -1,6 +1,6 @@
 """해싱 유틸리티 유닛 테스트"""
 import pytest
-from src.utils.hash import hash_string, generate_cache_key
+from src.utils.hash_utils import hash_string, generate_cache_key
 
 
 class TestHashUtils:

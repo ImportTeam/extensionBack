@@ -8,10 +8,10 @@ from src.services.impl.search_failure_analyzer import SearchFailureAnalyzer
 from src.repositories.impl.search_failure_repository import SearchFailureRepository
 from src.core.logging import logger
 
-router = APIRouter(prefix="/api/analytics", tags=["analytics"])
+analytics_router = APIRouter(prefix="/api/analytics", tags=["analytics"])
 
 
-@router.get("/dashboard")
+@analytics_router.get("/dashboard")
 async def get_dashboard(db: Session = Depends(get_db)):
     """
     분석 대시보드
@@ -40,7 +40,7 @@ async def get_dashboard(db: Session = Depends(get_db)):
         raise HTTPException(status_code=500, detail="Failed to get dashboard")
 
 
-@router.get("/common-failures")
+@analytics_router.get("/common-failures")
 async def get_common_failures(
     limit: int = 20,
     db: Session = Depends(get_db)
@@ -54,7 +54,7 @@ async def get_common_failures(
         raise HTTPException(status_code=500, detail="Failed to get common failures")
 
 
-@router.get("/category-analysis")
+@analytics_router.get("/category-analysis")
 async def get_category_analysis(db: Session = Depends(get_db)):
     """카테고리별 분석"""
     try:
@@ -65,7 +65,7 @@ async def get_category_analysis(db: Session = Depends(get_db)):
         raise HTTPException(status_code=500, detail="Failed to get category analysis")
 
 
-@router.get("/improvements")
+@analytics_router.get("/improvements")
 async def get_improvement_suggestions(db: Session = Depends(get_db)):
     """개선 제안"""
     try:
@@ -79,7 +79,7 @@ async def get_improvement_suggestions(db: Session = Depends(get_db)):
         raise HTTPException(status_code=500, detail="Failed to get suggestions")
 
 
-@router.get("/export")
+@analytics_router.get("/export")
 async def export_learning_data(
     format: str = "json",
     db: Session = Depends(get_db)
@@ -112,7 +112,7 @@ async def export_learning_data(
         raise HTTPException(status_code=500, detail="Failed to export data")
 
 
-@router.post("/resolve/{failure_id}")
+@analytics_router.post("/resolve/{failure_id}")
 async def resolve_failure(
     failure_id: int,
     status: str,

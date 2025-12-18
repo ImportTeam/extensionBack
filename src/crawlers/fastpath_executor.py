@@ -49,7 +49,7 @@ class FastPathExecutor(SearchExecutor):
             FastPathNoResults: 검색 결과 없음
             FastPathProductFetchFailed: 상품 가져오기 실패
         """
-        from src.crawlers.danawa.boundary import http_fastpath_search
+        from src.crawlers.boundary import http_fastpath_search
 
         logger.debug(f"[FastPath] Executing: query='{query}', timeout={timeout:.2f}s")
 

@@ -18,14 +18,14 @@ from playwright.async_api import Browser, Page
 from src.core.config import settings
 from src.core.logging import logger
 
-from src.crawlers.danawa.boundary import (
+from src.crawlers.boundary import (
     DanawaHttpFastPath,
     TimeoutManager,
     FastPathNoResults,
     FastPathProductFetchFailed,
 )
-from src.crawlers.danawa.metrics import CircuitBreaker
-from src.crawlers.danawa.playwright import (
+from src.crawlers.metrics import CircuitBreaker
+from src.crawlers.playwright import (
     ensure_shared_browser,
     new_page as _new_page,
     shutdown_shared_browser as _shutdown_pw,
