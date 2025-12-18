@@ -79,22 +79,15 @@ async def search_lowest_price(
     - "갤럭시 버즈" 같은 검색어 → timeout 확장 (5s → 10s)
     - 다나와의 과도한 결과 반환 방지
     """
-    total_budget_ms = int(getattr(settings, "crawler_total_budget_ms", 4000))
-    
-    # 🔴 Broad query 감지 → timeout 50% 확장
-    if is_broad_query(product_name):
-        original_budget = total_budget_ms
-        total_budget_ms = int(total_budget_ms * 1.5)  # 4000ms → 6000ms
-        logger.warning(
-            f"[BROAD-QUERY] Detected broad query '{product_name}' "
-            f"→ extending timeout {original_budget}ms → {total_budget_ms}ms"
-        )
+    # 🔴 기가차드 수정: 예산 분리 (HTTP 10s, Playwright 15s)
+    # 이제 settings에서 가져오지 않고 명시적으로 할당
+    total_budget_ms = 25000 
     
     timeout_mgr = TimeoutManager(total_budget_ms)
     cb = crawler._get_circuit_breaker()
 
     cleaned_name = clean_product_name(product_name)  # 순수 정제만
-    logger.info(f"[CRAWL] Starting search with normalized query: {product_name} (budget: {total_budget_ms}ms)")
+    logger.info(f"[CRAWL] Starting search: {product_name} (HTTP: 10s, PW: 15s)")
 
     page = None
     try:
@@ -102,35 +95,32 @@ async def search_lowest_price(
         if not product_code:
             try:
                 if not cb.is_open():
-                    logger.info(
-                        f"[HTTP-FASTPATH] Phase 1 - Attempting curl-based HTTP search "
-                        f"(timeout: {timeout_mgr.budget.http_budget_ms}ms)"
-                    )
-                    from src.utils.search import DanawaSearchHelper
+                    # 🔴 기가차드 설계: 너무 짧거나 범용적인 쿼리는 HTTP FastPath 스킵
+                    if is_broad_query(product_name) or product_name.count(" ") < 1:
+                        logger.warning(f"[HTTP-FASTPATH] ⏩ Skipping HTTP for broad/short query: '{product_name}'")
+                    else:
+                        logger.info(f"[HTTP-FASTPATH] Phase 1 - Attempting curl-based HTTP search (timeout: 10s)")
+                        from src.utils.search import DanawaSearchHelper
 
-                    helper = DanawaSearchHelper()
-                    # ✅ product_name은 이미 정규화되었으므로, 추가 변형만 생성
-                    candidates = helper.generate_search_candidates(product_name)
-                    
-                    fast = await asyncio.wait_for(
-                        crawler._http.search_lowest_price(
-                            query=product_name,
-                            candidates=candidates,
-                            total_timeout_ms=timeout_mgr.budget.http_budget_ms,
-                        ),
-                        timeout=timeout_mgr.budget.http_budget_s + 2.0,
-                    )
-                    if fast:
-                        elapsed_ms = timeout_mgr.elapsed_ms
-                        logger.info(
-                            f"[HTTP-FASTPATH] ✅ Phase 1 SUCCESS - Found price via curl "
-                            f"(result: {fast.get('lowest_price', 0)}원 from {fast.get('mall', '?')} | "
-                            f"elapsed: {elapsed_ms}ms)"
+                        helper = DanawaSearchHelper()
+                        candidates = helper.generate_search_candidates(product_name)
+                        
+                        # HTTP 페이즈 시작
+                        timeout_mgr.start_phase()
+                        fast = await asyncio.wait_for(
+                            crawler._http.search_lowest_price(
+                                query=product_name,
+                                candidates=candidates,
+                                total_timeout_ms=10000, # 10s
+                            ),
+                            timeout=12.0, # 여유분 포함
                         )
-                        cb.record_success()
-                        return fast
-                    logger.warning(f"[HTTP-FASTPATH] ⚠️  Phase 1 RETURNED NONE - Will fallback to Playwright")
-                    cb.record_failure()
+                        if fast:
+                            logger.info(f"[HTTP-FASTPATH] ✅ Phase 1 SUCCESS (elapsed: {timeout_mgr.phase_elapsed_ms}ms)")
+                            cb.record_success()
+                            return fast
+                        logger.warning(f"[HTTP-FASTPATH] ⚠️  Phase 1 RETURNED NONE")
+                        cb.record_failure()
                 else:
                     remaining_time = cb.get_remaining_open_time()
                     logger.warning(
@@ -156,24 +146,19 @@ async def search_lowest_price(
                 cb.record_failure()
 
         # Playwright는 예산 내에서만 수행
-        remaining_s = timeout_mgr.remaining_s
-        logger.info(f"[PLAYWRIGHT] Phase 2 - Fallback to Playwright browser mode (remaining_budget: {remaining_s:.2f}s)")
-
-        if remaining_s < 0.8:
-            raise asyncio.TimeoutError("crawl_budget_exhausted_before_playwright")
+        # 🔴 기가차드 수정: Playwright 페이즈 시작 (독립 예산 15s)
+        timeout_mgr.start_phase()
+        logger.info(f"[PLAYWRIGHT] Phase 2 - Fallback to Playwright (Budget: 15s)")
 
         # 1단계: 검색 페이지에서 상품 찾기 (이미 코드가 주어지면 스킵)
         if not product_code:
-            if not timeout_mgr.has_minimum_for_playwright_search():
-                raise asyncio.TimeoutError("insufficient_budget_for_playwright_search_and_detail")
-
-            playwright_search_timeout = timeout_mgr.get_playwright_search_timeout()
-            sem_timeout = min(timeout_mgr.remaining_s, playwright_search_timeout + 1.0)
+            playwright_search_timeout = 8.0 # 검색에 최대 8초
+            sem_timeout = 10.0
             acquired = await crawler._acquire_browser_semaphore_with_timeout(sem_timeout)
             if not acquired:
                 raise ProductNotFoundException(f"Concurrency busy for: {product_name}")
             try:
-                logger.debug(f"[PLAYWRIGHT] Phase 2-A - Launching browser search (timeout: {playwright_search_timeout:.1f}s)")
+                logger.debug(f"[PLAYWRIGHT] Phase 2-A - Launching browser search (timeout: {playwright_search_timeout}s)")
                 product_code = await asyncio.wait_for(
                     search_product(
                         crawler._create_page,
@@ -181,7 +166,7 @@ async def search_lowest_price(
                         product_name,
                         overall_timeout_s=playwright_search_timeout,
                     ),
-                    timeout=playwright_search_timeout,
+                    timeout=playwright_search_timeout + 2.0,
                 )
                 logger.info(f"[PLAYWRIGHT] Phase 2-A ✅ Found product pcode: {product_code}")
                 cb.metrics.record_playwright_hit()
@@ -197,12 +182,14 @@ async def search_lowest_price(
 
         # 2단계: 상품 상세 페이지에서 최저가 추출
         await crawler._rate_limit()
-        remaining_s = timeout_mgr.remaining_s
-        if remaining_s < 1.0:
+        
+        # 남은 Playwright 예산 확인
+        remaining_pw_s = timeout_mgr.phase_remaining_ms_playwright / 1000.0
+        if remaining_pw_s < 2.0:
             raise asyncio.TimeoutError("insufficient_budget_for_playwright_detail")
         
-        playwright_detail_timeout = timeout_mgr.get_playwright_detail_timeout()
-        sem_timeout = min(timeout_mgr.remaining_s, playwright_detail_timeout + 1.0)
+        playwright_detail_timeout = min(10.0, remaining_pw_s) # 상세 페이지에 최대 10초
+        sem_timeout = playwright_detail_timeout + 2.0
         acquired = await crawler._acquire_browser_semaphore_with_timeout(sem_timeout)
         if not acquired:
             raise CrawlerException(f"Playwright concurrency busy for: {product_name}")
@@ -210,27 +197,24 @@ async def search_lowest_price(
             page = await crawler._create_page()
             # Playwright 내부 selector timeout은 충분히 확보
             try:
-                page.set_default_timeout(8000)
+                page.set_default_timeout(10000)
             except Exception:
                 pass
-            logger.debug(f"[PLAYWRIGHT] Phase 2-B - Fetching product details (timeout: {playwright_detail_timeout:.1f}s)")
+            logger.debug(f"[PLAYWRIGHT] Phase 2-B - Fetching product details (timeout: {playwright_detail_timeout}s)")
             result = await asyncio.wait_for(
                 get_product_lowest_price(page, crawler.product_url, product_code, cleaned_name),
-                timeout=playwright_detail_timeout,
+                timeout=playwright_detail_timeout + 2.0,
             )
             if result:
-                elapsed_ms = timeout_mgr.elapsed_ms
                 logger.info(
-                    f"[PLAYWRIGHT] Phase 2-B ✅ SUCCESS - Got price from Playwright "
-                    f"(result: {result.get('lowest_price', 0)}원 from {result.get('mall', '?')} | "
-                    f"elapsed: {elapsed_ms}ms)"
+                    f"[PLAYWRIGHT] Phase 2-B ✅ SUCCESS (Total PW elapsed: {timeout_mgr.phase_elapsed_ms}ms)"
                 )
                 cb.metrics.record_playwright_hit()
             else:
                 logger.error(f"[PLAYWRIGHT] Phase 2-B ❌ No price data returned")
                 cb.metrics.record_playwright_failure()
         except asyncio.TimeoutError:
-            logger.error(f"[PLAYWRIGHT] Phase 2-B ❌ Detail page timeout after {playwright_detail_timeout}s")
+            logger.error(f"[PLAYWRIGHT] Phase 2-B ❌ Detail page timeout")
             cb.metrics.record_playwright_failure()
             raise
         except Exception as e:

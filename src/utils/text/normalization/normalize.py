@@ -170,8 +170,18 @@ def _normalize_search_query_legacy(text: str) -> str:
             cleaned = cleaned.split(sep)[0].strip()
             break
 
+    # 🔴 기가차드 수정: "블루투스" -> "투스" 방지를 위한 보호 로직
+    # "블루"가 색상으로 오인되어 분리/삭제되는 것을 방지합니다.
+    protected_terms = {"블루투스": "__BT_PROTECT__", "블랙박스": "__BB_PROTECT__"}
+    for term, protect in protected_terms.items():
+        cleaned = cleaned.replace(term, protect)
+
     colors = "화이트|블랙|실버|골드|그레이|블루|핑크|레드|그린|퍼플|로즈|샴페인|뉴트럼|차콜|브론즈|건메탈"
     cleaned = re.sub(f"({colors})([가-힣])", r"\1 \2", cleaned)
+
+    # 보호 토큰 복구
+    for term, protect in protected_terms.items():
+        cleaned = cleaned.replace(protect, term)
 
     cleaned = re.sub(r"([가-힣])([A-Z])", r"\1 \2", cleaned)
 

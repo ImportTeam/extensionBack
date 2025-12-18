@@ -14,33 +14,30 @@ from dataclasses import dataclass
 class TimeoutBudget:
     """크롤링 타임아웃 예산 계산기.
 
-    - 전체 예산: total_ms
-    - HTTP 예산: 전체의 65% (default)
-    - Playwright: 나머지
+    수정: HTTP와 Playwright 예산을 독립적으로 분리.
+    - HTTP: 10초 (Fast Path)
+    - Playwright: 15초 (Fallback)
     """
 
-    total_ms: int  # 전체 예산 (ms)
-    http_budget_percent: float = 0.65  # HTTP Fast Path가 사용할 비율
+    total_ms: int = 25000  # 전체 합산 예산 (10s + 15s)
 
     @property
     def http_budget_ms(self) -> int:
-        """HTTP Fast Path에 할당된 예산 (ms)."""
-        return max(500, int(self.total_ms * self.http_budget_percent))
+        """HTTP Fast Path 전용 예산: 10초"""
+        return 10000
 
     @property
     def playwright_budget_ms(self) -> int:
-        """Playwright에 할당된 예산 (ms)."""
-        return max(500, self.total_ms - self.http_budget_ms)
+        """Playwright 전용 예산: 15초"""
+        return 15000
 
     @property
     def http_budget_s(self) -> float:
-        """HTTP Fast Path에 할당된 예산 (초)."""
-        return max(0.2, self.http_budget_ms / 1000.0)
+        return 10.0
 
     @property
     def playwright_budget_s(self) -> float:
-        """Playwright에 할당된 예산 (초)."""
-        return max(0.2, self.playwright_budget_ms / 1000.0)
+        return 15.0
 
 
 class TimeoutManager:
@@ -51,17 +48,39 @@ class TimeoutManager:
     - 남은 예산 계산
     """
 
-    def __init__(self, total_timeout_ms: int) -> None:
+    def __init__(self, total_timeout_ms: int = 25000) -> None:
         """초기화.
 
         Args:
-            total_timeout_ms: 전체 크롤링 타임아웃 (ms)
+            total_timeout_ms: 전체 크롤링 타임아웃 (ms) - 이제 25s 기본값 사용
         """
         self.total_timeout_ms = total_timeout_ms
         self.budget = TimeoutBudget(total_timeout_ms)
 
         loop = asyncio.get_running_loop()
         self._start_time = loop.time()
+        self._phase_start_time = self._start_time  # 페이즈별 추적용
+
+    def start_phase(self) -> None:
+        """새로운 페이즈(예: Playwright) 시작 시점 기록"""
+        loop = asyncio.get_running_loop()
+        self._phase_start_time = loop.time()
+
+    @property
+    def phase_elapsed_ms(self) -> int:
+        """현재 페이즈에서의 경과 시간 (ms)"""
+        loop = asyncio.get_running_loop()
+        return int((loop.time() - self._phase_start_time) * 1000)
+
+    @property
+    def phase_remaining_ms_http(self) -> int:
+        """HTTP 페이즈 남은 시간"""
+        return max(0, self.budget.http_budget_ms - self.phase_elapsed_ms)
+
+    @property
+    def phase_remaining_ms_playwright(self) -> int:
+        """Playwright 페이즈 남은 시간"""
+        return max(0, self.budget.playwright_budget_ms - self.phase_elapsed_ms)
 
     @property
     def elapsed_ms(self) -> int:
