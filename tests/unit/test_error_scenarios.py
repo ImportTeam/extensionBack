@@ -32,7 +32,7 @@ class TestErrorScenarios:
             )
         
         # 복구: 캐시 없이 계속 진행 (fallback to search)
-        assert exc_info.value.error_code == "CACHE_CONN_FAILED"
+        assert exc_info.value.error_code == "CACHE_CONNECTION_ERROR"
         # → API는 에러 없이 계속 진행, 다만 캐시 이점 없음
     
     # ========== FastPath (HTTP) 에러 ==========

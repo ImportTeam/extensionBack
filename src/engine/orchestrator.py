@@ -333,18 +333,59 @@ class SearchOrchestrator:
                 elapsed_ms=self.budget_manager.elapsed() * 1000,
             )
 
-        except AsyncTimeoutError as e:
+        except AsyncTimeoutError:
             self.budget_manager.checkpoint("slowpath_failed")
             logger.error(f"SlowPath timeout: query='{query}'")
-            raise
-        except ProductNotFoundException as e:
+            return SearchResult.timeout(
+                query=query,
+                elapsed_ms=self.budget_manager.elapsed() * 1000,
+                budget_report=self.budget_manager.get_report(),
+            )
+        except ProductNotFoundException:
             self.budget_manager.checkpoint("slowpath_failed")
-            logger.warning(f"SlowPath: product not found for query='{query}'")
-            raise
+            logger.info(f"SlowPath: no results for query='{query}'")
+            return SearchResult.no_results(
+                query=query,
+                elapsed_ms=self.budget_manager.elapsed() * 1000,
+            )
         except Exception as e:
+            # Known error mapping for better API error_code
+            from src.core.exceptions import BlockedException, ParsingException, TimeoutException
+
             self.budget_manager.checkpoint("slowpath_failed")
-            logger.error(f"SlowPath failed: query='{query}', error={type(e).__name__}: {e}", exc_info=True)
-            raise
+
+            if isinstance(e, BlockedException):
+                logger.warning(f"SlowPath blocked: query='{query}'")
+                return SearchResult.blocked(
+                    query=query,
+                    elapsed_ms=self.budget_manager.elapsed() * 1000,
+                )
+
+            if isinstance(e, TimeoutException):
+                logger.warning(f"SlowPath timeout(exception): query='{query}', error={e}")
+                return SearchResult.timeout(
+                    query=query,
+                    elapsed_ms=self.budget_manager.elapsed() * 1000,
+                    budget_report=self.budget_manager.get_report(),
+                )
+
+            if isinstance(e, ParsingException):
+                logger.warning(f"SlowPath parse error: query='{query}', error={e}")
+                return SearchResult.parse_error(
+                    query=query,
+                    elapsed_ms=self.budget_manager.elapsed() * 1000,
+                    error=str(e),
+                )
+
+            logger.error(
+                f"SlowPath failed: query='{query}', error={type(e).__name__}: {e}",
+                exc_info=True,
+            )
+            return SearchResult.parse_error(
+                query=query,
+                elapsed_ms=self.budget_manager.elapsed() * 1000,
+                error=str(e),
+            )
 
     async def _save_to_cache(self, query: str, product_url: str, price: int) -> None:
         """결과를 캐시에 저장

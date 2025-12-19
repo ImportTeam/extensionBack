@@ -38,6 +38,12 @@ class Settings(BaseSettings):
     # Playwright 동시성 제한(서버 터짐 방지)
     crawler_browser_concurrency: int = 2
 
+    # SlowPath 백엔드 선택
+    # - playwright: 기존 Playwright 기반 SlowPath
+    # - disabled: 브라우저 기반 폴백 비활성화(저메모리 환경용)
+    # - drissionpage: (옵션) DrissionPage 기반 SlowPath (의존성 설치 필요)
+    crawler_slowpath_backend: str = "playwright"
+
     # 앱 시작 시 Playwright 브라우저를 미리 띄울지 여부
     # 기본값은 False: 요청에서 HTTP Fast Path가 실패할 때만 lazy-launch
     crawler_playwright_warmup: bool = False
@@ -99,6 +105,14 @@ class Settings(BaseSettings):
     def validate_crawler_concurrency(cls, v: int) -> int:
         if v <= 0:
             raise ValueError("crawler_browser_concurrency must be positive")
+        return v
+
+    @field_validator("crawler_slowpath_backend")
+    @classmethod
+    def validate_crawler_slowpath_backend(cls, v: str) -> str:
+        allowed = {"playwright", "disabled", "drissionpage"}
+        if v not in allowed:
+            raise ValueError(f"crawler_slowpath_backend must be one of {sorted(allowed)}")
         return v
 
     @field_validator("database_url", "redis_url")

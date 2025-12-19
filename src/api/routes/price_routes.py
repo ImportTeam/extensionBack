@@ -12,7 +12,7 @@ from sqlalchemy.orm import Session
 from src.core.config import settings
 from src.core.database import get_db
 from src.core.logging import logger
-from src.crawlers import FastPathExecutor, SlowPathExecutor
+from src.crawlers import FastPathExecutor, SlowPathExecutor, DisabledSlowPathExecutor
 from src.engine import BudgetConfig, CacheAdapter, SearchOrchestrator, SearchStatus
 from src.repositories.impl.search_log_repository import SearchLogRepository
 from src.schemas.price_schema import (
@@ -50,7 +50,16 @@ def get_orchestrator(
     if _orchestrator is None:
         cache_adapter = CacheAdapter(cache_service)
         fastpath = FastPathExecutor()
-        slowpath = SlowPathExecutor()
+
+        if settings.crawler_slowpath_backend == "disabled":
+            slowpath = DisabledSlowPathExecutor()
+        elif settings.crawler_slowpath_backend == "playwright":
+            slowpath = SlowPathExecutor()
+        else:
+            # drissionpage 등은 아직 구현체가 없을 수 있으므로 명시적으로 막습니다.
+            raise ValueError(
+                f"Unsupported crawler_slowpath_backend: {settings.crawler_slowpath_backend}"
+            )
 
         # 12초 예산 설정
         budget_config = BudgetConfig(

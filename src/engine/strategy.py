@@ -72,13 +72,40 @@ class ExecutionStrategy:
         Returns:
             bool: SlowPath로 전환해야 하는지 여부
         """
+        # NOTE:
+        # 현재 코드베이스는 예외 계층이 두 군데에 존재합니다.
+        # - src.engine.exceptions: 엔진 전용 예외
+        # - src.core.exceptions: 실행자(FastPath/SlowPath)에서 실제로 많이 사용하는 예외
+        # 폴백/재시도 로직이 둘 중 어느 쪽 예외를 받더라도 정상 동작해야 합니다.
+
         from src.engine.exceptions import (
             BlockedError,
             ParsingError,
             TimeoutError,
+            ProductNotFoundException as EngineProductNotFound,
+        )
+        from src.core.exceptions import (
+            BlockedException,
+            ParsingException,
+            TimeoutException,
+            NetworkTimeoutException,
+            ProductNotFoundException as CoreProductNotFound,
         )
 
-        return isinstance(error, (TimeoutError, ParsingError, BlockedError))
+        return isinstance(
+            error,
+            (
+                TimeoutError,
+                ParsingError,
+                BlockedError,
+                EngineProductNotFound,
+                TimeoutException,
+                NetworkTimeoutException,
+                ParsingException,
+                BlockedException,
+                CoreProductNotFound,
+            ),
+        )
 
     @staticmethod
     def get_retry_count(error: Exception) -> int:
@@ -100,16 +127,25 @@ class ExecutionStrategy:
             BlockedError,
             ParsingError,
             TimeoutError,
+            ProductNotFoundException as EngineProductNotFound,
+        )
+        from src.core.exceptions import (
+            BlockedException,
+            ParsingException,
+            TimeoutException,
+            NetworkTimeoutException,
+            ProductNotFoundException as CoreProductNotFound,
         )
 
-        if isinstance(error, TimeoutError):
+        if isinstance(error, (TimeoutError, TimeoutException, NetworkTimeoutException)):
             return 1
-        elif isinstance(error, ParsingError):
+        if isinstance(error, (EngineProductNotFound, CoreProductNotFound)):
             return 0
-        elif isinstance(error, BlockedError):
+        if isinstance(error, (ParsingError, ParsingException)):
+            return 0
+        if isinstance(error, (BlockedError, BlockedException)):
             return 2
-        else:
-            return 0
+        return 0
 
     @staticmethod
     def should_skip_fastpath(error_history: list[Exception]) -> bool:
@@ -128,11 +164,12 @@ class ExecutionStrategy:
             return False
 
         from src.engine.exceptions import BlockedError
+        from src.core.exceptions import BlockedException
 
         # 최근 3번 연속 차단인 경우 FastPath 스킵
         recent_errors = error_history[-3:]
         if len(recent_errors) == 3 and all(
-            isinstance(e, BlockedError) for e in recent_errors
+            isinstance(e, (BlockedError, BlockedException)) for e in recent_errors
         ):
             return True
 
