@@ -62,11 +62,12 @@ def get_orchestrator(
             )
 
         # 12초 예산 설정
+        # 12초 예산 준수: 합계 12.0s 이하
         budget_config = BudgetConfig(
             total_budget=12.0,
             cache_timeout=0.2,
             fastpath_timeout=3.0,
-            slowpath_timeout=9.0,
+            slowpath_timeout=8.8,
         )
 
         _orchestrator = SearchOrchestrator(
