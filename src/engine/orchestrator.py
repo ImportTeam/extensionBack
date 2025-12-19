@@ -333,7 +333,8 @@ class SearchOrchestrator:
                 elapsed_ms=self.budget_manager.elapsed() * 1000,
             )
 
-        except AsyncTimeoutError:
+        except (AsyncTimeoutError, TimeoutError):
+            # Catch both asyncio.TimeoutError and built-in TimeoutError
             self.budget_manager.checkpoint("slowpath_failed")
             logger.error(f"SlowPath timeout: query='{query}'")
             return SearchResult.timeout(

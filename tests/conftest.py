@@ -208,8 +208,12 @@ def stress_test_queries():
         "아이패드 미니",
     ]
     
-    # 10배 반복해서 100개 생성
-    return [f"{product} #{i % 10}" for i in range(100) for product in products]
+    # 정확히 100개 생성 (10 products × 10 variations)
+    queries = []
+    for i in range(10):
+        for product in products:
+            queries.append(f"{product} #{i}")
+    return queries
 
 
 # ============================================================================
