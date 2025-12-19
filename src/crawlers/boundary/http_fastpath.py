@@ -49,7 +49,8 @@ class DanawaHttpFastPath:
         self.product_url = "https://prod.danawa.com/info/"
 
     async def _fetch_html(self, url: str, timeout_ms: int) -> Optional[str]:
-        timeout_s = max(0.2, timeout_ms / 1000.0)
+        # Increased minimum from 0.2s to 1.0s for realistic network conditions
+        timeout_s = max(1.0, timeout_ms / 1000.0)
 
         try:
             # Log URL with reasonable truncation (120 chars) for debugging
@@ -183,8 +184,9 @@ class DanawaHttpFastPath:
                     break
 
                 # Product page fetch: 상품 상세는 더 느릴 수 있어 별도 타임아웃을 둡니다.
+                # Increased minimum from 300ms to 3000ms (3s) for realistic network conditions
                 configured_product_timeout_ms = int(getattr(settings, "crawler_http_product_timeout_ms", 6000))
-                product_timeout_ms = int(max(300, min(configured_product_timeout_ms, remaining_total_ms)))
+                product_timeout_ms = int(max(3000, min(configured_product_timeout_ms, remaining_total_ms)))
 
                 product_url = f"{self.product_url}?pcode={pcode}&keyword={quote(scoring_query)}"
                 product_html = await self._fetch_html(product_url, timeout_ms=product_timeout_ms)
@@ -216,12 +218,15 @@ class DanawaHttpFastPath:
                 chosen_result = {
                     "product_name": parsed.product_name,
                     "lowest_price": parsed.lowest_price,
+                    "price": parsed.lowest_price,  # alias for orchestrator
+                    "product_url": parsed.link,  # full URL
                     "link": parsed.link,
                     "source": "danawa",
                     "mall": parsed.mall,
                     "free_shipping": parsed.free_shipping,
                     "top_prices": parsed.top_prices,
                     "price_trend": parsed.price_trend,
+                    "pcode": chosen_pcode,  # product ID
                     "updated_at": datetime.now().isoformat(),
                     "_path": "http_fastpath",
                 }

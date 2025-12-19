@@ -63,11 +63,12 @@ def get_orchestrator(
 
         # 12초 예산 설정
         # 12초 예산 준수: 합계 12.0s 이하
+        # Increased FastPath timeout to 8s for realistic network conditions
         budget_config = BudgetConfig(
             total_budget=12.0,
-            cache_timeout=0.2,
-            fastpath_timeout=3.0,
-            slowpath_timeout=8.8,
+            cache_timeout=0.5,
+            fastpath_timeout=8.0,
+            slowpath_timeout=3.0,
         )
 
         _orchestrator = SearchOrchestrator(
@@ -179,18 +180,37 @@ async def search_price(
             link = result.product_url if result.product_url is not None else ""
             source = result.source if result.source is not None else "unknown"
             elapsed_ms = result.elapsed_ms if result.elapsed_ms is not None else 0.0
+            product_id = result.product_id if result.product_id is not None else None
+            top_prices_data = result.top_prices if result.top_prices is not None else None
+            
+            # Convert top_prices to MallPrice schema if exists
+            top_prices_list = None
+            if top_prices_data and isinstance(top_prices_data, list):
+                from src.schemas.price_schema import MallPrice
+                top_prices_list = [
+                    MallPrice(
+                        rank=item.get("rank", idx+1),
+                        mall=item.get("mall", "알 수 없음"),
+                        price=item.get("price", 0),
+                        free_shipping=item.get("free_shipping", False),
+                        delivery=item.get("delivery", ""),
+                        link=item.get("link", ""),
+                    )
+                    for idx, item in enumerate(top_prices_data[:3])  # TOP 3 only
+                ]
 
             return PriceSearchResponse(
                 status="success",
                 data=PriceData(
                     product_name=request.product_name,
+                    product_id=product_id,
                     is_cheaper=is_cheaper,
                     price_diff=price_diff,
                     lowest_price=lowest_price,
                     link=link,
                     mall="다나와",
                     free_shipping=None,
-                    top_prices=None,
+                    top_prices=top_prices_list,
                     price_trend=None,
                     source=source,
                     elapsed_ms=elapsed_ms,

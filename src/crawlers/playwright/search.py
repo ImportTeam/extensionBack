@@ -54,13 +54,14 @@ async def search_product(
             # orchestrator에서 전체 예산으로 asyncio.wait_for를 걸기 때문에,
             # 여기서는 Playwright 레벨 timeout도 그 범위 안으로 맞춰
             # 취소(cancellation)로 인한 noisy error(net::ERR_ABORTED 등)를 줄입니다.
+            # Increased minimum timeouts for realistic network conditions
             if overall_timeout_s is not None:
-                goto_timeout_ms = max(800, int(overall_timeout_s * 1000 * 0.75))
+                goto_timeout_ms = max(15000, int(overall_timeout_s * 1000 * 0.75))
                 await page.goto(search_url, wait_until='domcontentloaded', timeout=goto_timeout_ms)
-                selector_timeout_ms = max(800, int(overall_timeout_s * 1000 * 0.85))
+                selector_timeout_ms = max(8000, int(overall_timeout_s * 1000 * 0.85))
             else:
-                await page.goto(search_url, wait_until='domcontentloaded')
-                selector_timeout_ms = 3000 if idx > 0 else 5000
+                await page.goto(search_url, wait_until='domcontentloaded', timeout=15000)
+                selector_timeout_ms = 8000 if idx > 0 else 12000
 
             try:
                 await page.wait_for_selector('.prod_item, a[href*="pcode="]', timeout=selector_timeout_ms)

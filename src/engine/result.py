@@ -50,6 +50,12 @@ class SearchResult:
     query: Optional[str] = None
     source: Optional[str] = None  # "cache" | "fastpath" | "slowpath"
     elapsed_ms: Optional[float] = None
+    
+    # 상품 식별자 (pcode 등)
+    product_id: Optional[str] = None  # 다나와 pcode or unique ID
+    
+    # TOP 3 가격 리스트
+    top_prices: Optional[list[dict]] = None  # [{"rank": 1, "mall": "...", "price": 123, "link": "..."}]
 
     # 디버깅 정보
     error_message: Optional[str] = None
@@ -77,7 +83,8 @@ class SearchResult:
 
     @classmethod
     def from_cache(
-        cls, product_url: str, price: int, query: str, elapsed_ms: float
+        cls, product_url: str, price: int, query: str, elapsed_ms: float,
+        product_id: Optional[str] = None, top_prices: Optional[list[dict]] = None
     ) -> "SearchResult":
         """캐시에서 반환된 결과 생성
 
@@ -86,6 +93,8 @@ class SearchResult:
             price: 가격
             query: 검색어
             elapsed_ms: 소요 시간 (밀리초)
+            product_id: 상품 ID (pcode)
+            top_prices: TOP 3 가격 리스트
 
         Returns:
             SearchResult: 캐시 히트 결과
@@ -97,11 +106,14 @@ class SearchResult:
             query=query,
             source="cache",
             elapsed_ms=elapsed_ms,
+            product_id=product_id,
+            top_prices=top_prices,
         )
 
     @classmethod
     def from_fastpath(
-        cls, product_url: str, price: int, query: str, elapsed_ms: float
+        cls, product_url: str, price: int, query: str, elapsed_ms: float,
+        product_id: Optional[str] = None, top_prices: Optional[list[dict]] = None
     ) -> "SearchResult":
         """FastPath에서 반환된 결과 생성
 
@@ -110,6 +122,8 @@ class SearchResult:
             price: 가격
             query: 검색어
             elapsed_ms: 소요 시간 (밀리초)
+            product_id: 상품 ID (pcode)
+            top_prices: TOP 3 가격 리스트
 
         Returns:
             SearchResult: FastPath 성공 결과
@@ -121,11 +135,14 @@ class SearchResult:
             query=query,
             source="fastpath",
             elapsed_ms=elapsed_ms,
+            product_id=product_id,
+            top_prices=top_prices,
         )
 
     @classmethod
     def from_slowpath(
-        cls, product_url: str, price: int, query: str, elapsed_ms: float
+        cls, product_url: str, price: int, query: str, elapsed_ms: float,
+        product_id: Optional[str] = None, top_prices: Optional[list[dict]] = None
     ) -> "SearchResult":
         """SlowPath에서 반환된 결과 생성
 
@@ -134,6 +151,8 @@ class SearchResult:
             price: 가격
             query: 검색어
             elapsed_ms: 소요 시간 (밀리초)
+            product_id: 상품 ID (pcode)
+            top_prices: TOP 3 가격 리스트
 
         Returns:
             SearchResult: SlowPath 성공 결과
@@ -145,6 +164,8 @@ class SearchResult:
             query=query,
             source="slowpath",
             elapsed_ms=elapsed_ms,
+            product_id=product_id,
+            top_prices=top_prices,
         )
 
     @classmethod

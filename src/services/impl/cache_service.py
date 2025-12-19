@@ -56,26 +56,23 @@ class CacheService:
                 try:
                     data = json.loads(cached_data)
                     return CachedPrice(**data)
-                except (json.JSONDecodeError, ValueError) as e:
-                    logger.error(f"Failed to deserialize cache: {e}")
-                    raise CacheSerializationException(
-                        message="Failed to deserialize cached data",
-                        error_code="CACHE_DESER_FAILED",
-                        details={"key": cache_key, "error": str(e)}
-                    )
+                except (json.JSONDecodeError, ValueError, TypeError) as e:
+                    # Corrupted or schema-mismatched cache - delete and treat as miss
+                    logger.warning(f"Cache data deserialization failed: {type(e).__name__}: {e}")
+                    try:
+                        self.redis_client.delete(cache_key)
+                        logger.info(f"Deleted corrupted cache for key: {cache_key}")
+                    except Exception:
+                        pass
+                    return None
             
             logger.info(f"Cache miss for key: {cache_key}")
             return None
             
-        except CacheSerializationException:
-            raise
         except Exception as e:
-            logger.error(f"Cache read error: {e}")
-            raise CacheConnectionException(
-                message="Cache read failed",
-                error_code="CACHE_READ_FAILED",
-                details={"error": str(e)}
-            )
+            # Cache errors should not break the request - treat as miss
+            logger.warning(f"Cache read error (treating as miss): {type(e).__name__}: {e}")
+            return None
     
     def set(self, product_name: str, price_data: dict) -> bool:
         """

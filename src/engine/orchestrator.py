@@ -227,6 +227,11 @@ class SearchOrchestrator:
                 f"FastPath success: query='{query}', price={price_int}, elapsed={self.budget_manager.elapsed():.2f}s"
             )
 
+            # Extract metadata (product_id, top_prices)
+            metadata = getattr(result, 'metadata', {}) or {}
+            product_id = metadata.get('product_id') or metadata.get('pcode')
+            top_prices = metadata.get('top_prices')
+
             # Cache 저장
             await self._save_to_cache(query, product_url, price_int)
 
@@ -235,6 +240,8 @@ class SearchOrchestrator:
                 price=price_int,
                 query=query,
                 elapsed_ms=self.budget_manager.elapsed() * 1000,
+                product_id=product_id,
+                top_prices=top_prices,
             )
 
         except AsyncTimeoutError as e:
@@ -323,6 +330,11 @@ class SearchOrchestrator:
                 f"SlowPath success: query='{query}', price={price_int}, elapsed={self.budget_manager.elapsed():.2f}s"
             )
 
+            # Extract metadata (product_id, top_prices)
+            metadata = getattr(result, 'metadata', {}) or {}
+            product_id = metadata.get('product_id') or metadata.get('pcode')
+            top_prices = metadata.get('top_prices')
+
             # Cache 저장
             await self._save_to_cache(query, product_url, price_int)
 
@@ -331,6 +343,8 @@ class SearchOrchestrator:
                 price=price_int,
                 query=query,
                 elapsed_ms=self.budget_manager.elapsed() * 1000,
+                product_id=product_id,
+                top_prices=top_prices,
             )
 
         except (AsyncTimeoutError, TimeoutError):

@@ -5,7 +5,7 @@ build-backend = "setuptools.build_meta"
 [project]
 name = "price-detector"
 version = "1.0.0"
-description = "최저가 탐지 서비스 - Cache-First 전략"
+description = "picsel - 최저가 탐지 서비스"
 requires-python = ">=3.10"
 dependencies = [
     "fastapi==0.109.0",

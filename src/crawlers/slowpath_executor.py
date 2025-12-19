@@ -93,8 +93,8 @@ class SlowPathExecutor(SearchExecutor):
             try:
                 search_url_base = "https://search.danawa.com/dsearch.php"
                 
-                # 타임아웃 계산: 전체 타임아웃의 40%를 검색에 할당
-                search_timeout = timeout * 0.4
+                # 타임아웃 계산: 전체 타임아웃의 60%를 검색에 할당 (Playwright needs more time)
+                search_timeout = max(8.0, timeout * 0.6)
                 
                 pcode = await search_product(
                     create_page=lambda: new_page(),

@@ -98,17 +98,19 @@ class FastPathExecutor(SearchExecutor):
                     raise ValueError(f"Invalid result type from FastPath: {type(result)}")
                 
                 # Safe 딕셔너리 접근
-                product_url = EdgeCaseHandler.safe_get(result, "product_url")
-                price = EdgeCaseHandler.safe_get(result, "price")
+                product_url = EdgeCaseHandler.safe_get(result, "product_url") or EdgeCaseHandler.safe_get(result, "link")
+                price = EdgeCaseHandler.safe_get(result, "price") or EdgeCaseHandler.safe_get(result, "lowest_price")
                 product_name = EdgeCaseHandler.safe_get(result, "product_name")
                 
-                if not product_url:
-                    logger.error(f"[FastPath] Missing product_url in result")
-                    raise ValueError("Missing or invalid product_url in result")
-                
+                # pcode is the source of truth - if we have price, we can proceed
                 if price is None:
                     logger.error(f"[FastPath] Missing price in result")
                     raise ValueError("Missing price in result")
+                
+                # Auto-generate product_url if missing (not critical)
+                if not product_url:
+                    logger.debug(f"[FastPath] No product_url provided, using fallback")
+                    product_url = "https://search.danawa.com/dsearch.php?query=" + query
                 
                 # Price validation with safe conversion
                 try:
@@ -128,11 +130,21 @@ class FastPathExecutor(SearchExecutor):
                     f"[FastPath] Success: url={product_url}, price={price_int}"
                 )
 
+                # Extract metadata from result
+                top_prices = EdgeCaseHandler.safe_get(result, "top_prices")
+                product_id = EdgeCaseHandler.safe_get(result, "pcode")  # danawa pcode
+
                 return CrawlResult(
                     product_url=product_url,
                     price=price_int,
                     product_name=EdgeCaseHandler.safe_str(product_name),
-                    metadata={"method": "fastpath", "timeout": timeout},
+                    metadata={
+                        "method": "fastpath", 
+                        "timeout": timeout,
+                        "product_id": product_id,
+                        "pcode": product_id,  # alias
+                        "top_prices": top_prices,
+                    },
                 )
             
             except AsyncTimeoutError as e:
