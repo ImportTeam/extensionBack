@@ -277,3 +277,155 @@ def concurrent_request_data():
         "total_requests": 100,  # 20 * 5
         "cache_hit_expected": "70%+",
     }
+
+
+# ============================================================================
+# API 테스트용 픽스처
+# ============================================================================
+
+@pytest.fixture
+def api_base_url():
+    """API 베이스 URL (localhost:8000)"""
+    return "http://localhost:8000"
+
+
+@pytest.fixture
+def api_search_payload_galaxy_buds3():
+    """갤럭시 버즈3 검색 요청 (FE에서 보내는 형식)"""
+    return {
+        "product_name": "삼성전자 갤럭시 버즈3 프로 블루투스 이어폰",
+        "current_price": 207900,
+    }
+
+
+@pytest.fixture
+def api_search_payload_galaxy_s25_ultra():
+    """갤럭시 S25 Ultra 검색 요청"""
+    return {
+        "product_name": "삼성전자 갤럭시 S25 Ultra 자급제",
+        "current_price": 1593200,
+    }
+
+
+@pytest.fixture
+def api_search_payload_macbook_m4():
+    """맥북 에어 M4 검색 요청"""
+    return {
+        "product_name": "Apple 2025 맥북 에어 13 M4",
+        "current_price": 1430980,
+    }
+
+
+@pytest.fixture
+def api_search_payload_shin_ramyeon():
+    """신라면 검색 요청"""
+    return {
+        "product_name": "농심 신라면 120g",
+        "current_price": 29860,
+    }
+
+
+@pytest.fixture
+def api_search_payload_intel_cpu():
+    """Intel i5-12400F 검색 요청"""
+    return {
+        "product_name": "Intel 코어12세대 i5-12400F 벌크",
+        "current_price": 190900,
+    }
+
+
+@pytest.fixture
+def api_search_payloads_diverse():
+    """다양한 상품 검색 요청 목록 (Unit/Coverage 테스트용)"""
+    return [
+        {
+            "product_name": "삼성전자 갤럭시 버즈3 프로",
+            "current_price": 207900,
+        },
+        {
+            "product_name": "Apple 2025 맥북 에어 13 M4",
+            "current_price": 1430980,
+        },
+        {
+            "product_name": "농심 신라면 120g",
+            "current_price": 2986,
+        },
+        {
+            "product_name": "Intel i5-12400F 벌크",
+            "current_price": 190900,
+        },
+        {
+            "product_name": "TCL 4K QLED Google TV 55인치",
+            "current_price": 634230,
+        },
+    ]
+
+
+@pytest.fixture
+def api_invalid_payloads():
+    """무효한 API 요청 목록 (에러 처리 테스트용)"""
+    return {
+        "missing_product_name": {
+            "current_price": 100000,
+        },
+        "empty_product_name": {
+            "product_name": "",
+            "current_price": 100000,
+        },
+        "negative_price": {
+            "product_name": "아이폰",
+            "current_price": -1000,
+        },
+        "non_numeric_price": {
+            "product_name": "아이폰",
+            "current_price": "가격",
+        },
+        "xss_injection": {
+            "product_name": "<script>alert('xss')</script>",
+            "current_price": 100000,
+        },
+    }
+
+
+@pytest.fixture
+def api_stress_payloads():
+    """스트레스 테스트용 요청 목록 (100개 다양한 상품)"""
+    base_products = [
+        ("갤럭시 버즈3 프로", 207900),
+        ("Apple 맥북 에어 M4", 1430980),
+        ("삼성 갤럭시 S25", 1593200),
+        ("TCL 4K TV 55인치", 634230),
+        ("신라면 120g", 2986),
+        ("Intel i5-12400F", 190900),
+        ("애플 아이패드 프로 11", 1299000),
+        ("LG 올레드 TV 55인치", 2500000),
+        ("에이수스 비보북 16", 1024000),
+        ("삼성 노트북 갤럭시북", 669000),
+    ]
+    
+    payloads = []
+    for i in range(10):
+        for product_name, price in base_products:
+            payloads.append({
+                "product_name": f"{product_name} #{i}",
+                "current_price": price + (i * 10000),
+            })
+    return payloads
+
+
+@pytest.fixture
+def expected_response_schema():
+    """기대하는 API 응답 스키마"""
+    return {
+        "status": str,
+        "data": {
+            "is_cheaper": bool,
+            "price_diff": int,
+            "lowest_price": int,
+            "link": str,
+            "mall": str,
+            "free_shipping": bool,
+            "top_prices": list,
+        },
+        "message": str,
+    }
