@@ -14,24 +14,11 @@ async def lifespan(app: FastAPI):
     """애플리케이션 생명주기"""
     logger.info("Starting application...")
     init_db()
-    # 기본 정책: HTTP Fast Path 먼저, Playwright는 실패 시에만 lazy-launch
-    # 필요하면 env로 crawler_playwright_warmup=true 설정하여 warmup 가능
-    if getattr(settings, "crawler_playwright_warmup", False):
-        try:
-            from src.crawlers import DanawaCrawler
-
-            await DanawaCrawler.warmup()
-        except Exception:
-            # 워밍업 실패가 앱 시작을 막지 않도록 무시
-            pass
     logger.info("Application started")
     yield
     logger.info("Shutting down application...")
     try:
-        from src.crawlers import DanawaCrawler
         from src.crawlers.http_client import shutdown_shared_http_client
-
-        await DanawaCrawler.shutdown_shared_browser()
         await shutdown_shared_http_client()
     except Exception:
         # 종료 훅에서의 예외는 앱 종료를 막지 않도록 무시

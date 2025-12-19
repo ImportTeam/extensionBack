@@ -48,7 +48,7 @@ def build_launch_args() -> list[str]:
     return deduped
 
 
-async def ensure_shared_browser() -> tuple[Playwright, Browser, BrowserContext]:
+async def ensure_shared_browser() -> tuple[Playwright | None, Browser, BrowserContext]:
     global _shared_playwright, _shared_browser, _shared_context
 
     async with _shared_lock:

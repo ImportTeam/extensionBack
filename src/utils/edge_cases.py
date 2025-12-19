@@ -1,5 +1,6 @@
 """엣지 케이스 처리 유틸리티"""
-from typing import TypeVar, Optional, List, Dict, Any
+from typing import TypeVar, Optional, List, Dict, Any, Type
+import functools
 from src.core.logging import logger
 
 T = TypeVar('T')
@@ -11,7 +12,7 @@ class EdgeCaseHandler:
     @staticmethod
     def safe_get(obj: Optional[Dict[str, Any]], key: str, 
                  default: Optional[T] = None, 
-                 expected_type: type = None) -> Optional[T]:
+                 expected_type: Optional[Type] = None) -> Optional[T]:
         """딕셔너리 안전 접근
         
         Args:
@@ -34,7 +35,7 @@ class EdgeCaseHandler:
             logger.error(f"Expected dict but got {type(obj).__name__}")
             return default
         
-        value = obj.get(key, default)
+        value: Any = obj.get(key, default)
         
         if value is not None and expected_type is not None:
             if not isinstance(value, expected_type):
@@ -44,7 +45,7 @@ class EdgeCaseHandler:
                 )
                 return default
         
-        return value
+        return value  # type: ignore[no-any-return]
     
     @staticmethod
     def safe_int(value: Any, default: int = 0, min_val: Optional[int] = None, 
@@ -163,7 +164,7 @@ class EdgeCaseHandler:
                 logger.debug(f"Index {index} out of range for list of length {len(lst)}")
                 return default
             
-            return lst[index]
+            return lst[index]  # type: ignore[no-any-return]
         except Exception as e:
             logger.error(f"Error accessing list index {index}: {e}")
             return default
@@ -235,7 +236,7 @@ def retry_on_exception(max_attempts: int = 3, backoff_factor: float = 1.0):
     
     def decorator(func):
         async def async_wrapper(*args, **kwargs):
-            last_exception = None
+            last_exception: Optional[Exception] = None
             
             for attempt in range(1, max_attempts + 1):
                 try:
@@ -255,7 +256,10 @@ def retry_on_exception(max_attempts: int = 3, backoff_factor: float = 1.0):
                             f"All {max_attempts} attempts failed. Last error: {e}"
                         )
             
-            raise last_exception
+            if last_exception is not None:
+                raise last_exception
+            else:
+                raise RuntimeError("Unexpected state: no exception recorded")
         
         return async_wrapper
     

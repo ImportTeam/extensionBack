@@ -122,15 +122,11 @@ class SlowPathExecutor(SearchExecutor):
             try:
                 product_url_base = f"https://prod.danawa.com/info/?pcode={pcode}"
                 
-                # 타임아웃 계산: 전체 타임아웃의 60%를 상세 페이지에 할당
-                detail_timeout = timeout * 0.6
-                
                 price_data: Optional[Dict[str, Any]] = await get_product_lowest_price(
                     page=page,
                     product_url_base=product_url_base,
                     product_code=pcode,
                     search_query=normalized_query,
-                    timeout_s=detail_timeout,
                 )
 
                 if not price_data or not isinstance(price_data, dict):

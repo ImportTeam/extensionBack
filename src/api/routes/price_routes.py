@@ -154,14 +154,21 @@ async def search_price(
 
         # 성공 응답
         if result.is_success:
-            is_cheaper = (
-                result.price < request.current_price
-                if request.current_price
-                else False
-            )
-            price_diff = (
-                request.current_price - result.price if request.current_price else 0
-            )
+            # result 속성들이 Optional이므로 먼저 non-null 확인
+            lowest_price = result.price if result.price is not None else 0
+            
+            # current_price는 Optional[int]이므로 None 체크 필수
+            is_cheaper = False
+            price_diff = 0
+            
+            if request.current_price is not None and request.current_price > 0 and lowest_price > 0:
+                is_cheaper = lowest_price < request.current_price
+                price_diff = request.current_price - lowest_price
+
+            # result 속성들이 Optional이므로 타입 체크 필수
+            link = result.product_url if result.product_url is not None else ""
+            source = result.source if result.source is not None else "unknown"
+            elapsed_ms = result.elapsed_ms if result.elapsed_ms is not None else 0.0
 
             return PriceSearchResponse(
                 status="success",
@@ -169,14 +176,14 @@ async def search_price(
                     product_name=request.product_name,
                     is_cheaper=is_cheaper,
                     price_diff=price_diff,
-                    lowest_price=result.price,
-                    link=result.product_url,
+                    lowest_price=lowest_price,
+                    link=link,
                     mall="다나와",
                     free_shipping=None,
                     top_prices=None,
                     price_trend=None,
-                    source=result.source,
-                    elapsed_ms=result.elapsed_ms,
+                    source=source,
+                    elapsed_ms=elapsed_ms,
                 ),
                 message="최저가를 찾았습니다.",
                 error_code=None,

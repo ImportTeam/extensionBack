@@ -7,19 +7,20 @@ from __future__ import annotations
 
 import json
 import re
+import sys
 from dataclasses import dataclass
 from functools import lru_cache
 from pathlib import Path
-from typing import Any, Dict, Iterable, Optional, Set, Tuple, cast
+from typing import Any, Dict, Iterable, Optional, Set, Tuple, cast, Union
 
 from src.core.logging import logger
 
 from src.utils.text_utils import clean_product_name, split_kr_en_boundary
 
 try:
-    import yaml  # type: ignore
+    import yaml
 except Exception:  # pragma: no cover
-    yaml = None
+    yaml = None  # type: ignore[assignment]
 
 
 _SEPARATORS = ["·", "•", "|", "/", ","]
