@@ -1,15 +1,48 @@
-"""Pydantic 스키마 정의"""
+"""Pydantic 스키마 정의 (Security & Validation Enhanced)"""
 from typing import Optional, List
-from pydantic import BaseModel, Field
+from pydantic import BaseModel, Field, field_validator
 from datetime import datetime
 
 
 class PriceSearchRequest(BaseModel):
-    """최저가 검색 요청"""
-    product_name: str = Field(..., min_length=1, description="검색할 상품명")
-    current_price: Optional[int] = Field(None, ge=0, description="현재 가격")
-    current_url: Optional[str] = Field(None, description="현재 URL")
-    product_code: Optional[str] = Field(None, description="다나와 상품 코드(pcode)")
+    """최저가 검색 요청 (입력 검증 강화)"""
+    product_name: str = Field(..., min_length=1, max_length=500, description="검색할 상품명")
+    current_price: Optional[int] = Field(None, ge=0, le=10**9, description="현재 가격 (0~10억)")
+    current_url: Optional[str] = Field(None, max_length=2048, description="현재 URL")
+    product_code: Optional[str] = Field(None, max_length=50, description="다나와 상품 코드(pcode)")
+    
+    @field_validator('product_name')
+    @classmethod
+    def validate_product_name(cls, v: str) -> str:
+        """제품명 검증: 특수문자 제한"""
+        if not v or not v.strip():
+            raise ValueError('상품명은 공백만으로 구성될 수 없습니다')
+        # 위험한 문자 체크 (SQL injection 방지)
+        dangerous_chars = ['<', '>', '"', "'", '\\', '\0', '\n', '\r']
+        for char in dangerous_chars:
+            if char in v:
+                raise ValueError(f'상품명에 허용되지 않는 문자가 포함되어 있습니다: {char}')
+        return v.strip()
+    
+    @field_validator('current_url')
+    @classmethod
+    def validate_url(cls, v: Optional[str]) -> Optional[str]:
+        """URL 검증"""
+        if v is None:
+            return None
+        if not v.startswith(('http://', 'https://')):
+            raise ValueError('URL은 http:// 또는 https://로 시작해야 합니다')
+        return v
+    
+    @field_validator('product_code')
+    @classmethod
+    def validate_product_code(cls, v: Optional[str]) -> Optional[str]:
+        """제품 코드 검증: 숫자만 허용"""
+        if v is None:
+            return None
+        if not v.isdigit():
+            raise ValueError('제품 코드는 숫자만 포함되어야 합니다')
+        return v
 
 
 class MallPrice(BaseModel):

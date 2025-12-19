@@ -1,25 +1,35 @@
-"""Budget Manager - Time and Resource Budget Management
+"""Budget Manager - Time and Resource Budget Management (Optimized)
 
-Manages the 12-second budget allocation across different execution stages:
-- Cache lookup: 200ms
-- FastPath (HTTP): 3s
-- SlowPath (Playwright): 9s
+예산 할당 구조:
+- 전체: 12초
+- Cache: 0.5초 (4%)
+- FastPath: 4초 (33%)
+- 버퍼: 1초 (8%)
+- SlowPath: 6.5초 (54%)
 """
 
 from dataclasses import dataclass
 from time import time
-from typing import Optional
+from typing import Optional, Dict
 
 
 @dataclass
 class BudgetConfig:
-    """예산 설정"""
+    """예산 설정 (개선된 배분)"""
 
     total_budget: float = 12.0  # 전체 예산 (초)
-    cache_timeout: float = 0.2  # Cache 조회 최대 시간 (초)
-    fastpath_timeout: float = 3.0  # FastPath 최대 시간 (초)
-    slowpath_timeout: float = 9.0  # SlowPath 최대 시간 (초)
+    cache_timeout: float = 0.5  # Cache 조회 (500ms - 여유)
+    fastpath_timeout: float = 4.0  # FastPath (4s - HTTP는 보통 빠름)
+    slowpath_timeout: float = 6.5  # SlowPath (6.5s - Playwright는 충분한 시간 필요)
     min_remaining: float = 1.0  # 실행 최소 여유 시간 (초)
+    
+    def __post_init__(self):
+        """설정 검증"""
+        sum_timeouts = self.cache_timeout + self.fastpath_timeout + self.slowpath_timeout
+        if sum_timeouts > self.total_budget:
+            raise ValueError(
+                f"Sum of timeouts ({sum_timeouts}s) exceeds total budget ({self.total_budget}s)"
+            )
 
 
 class BudgetManager:

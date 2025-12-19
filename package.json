@@ -1,7 +1,7 @@
 {
   "name": "importback",
   "version": "1.0.0",
-  "description": "importback",
+  "description": "import backend : 최저가 탐지 서비스",
   "license": "ISC",
   "author": "umsehun",
   "directories": {
@@ -9,12 +9,10 @@
     "test": "tests"
   },
   "scripts": {
-    "start" : "uvicorn main:app --reload --port 8000",
+    "start": "uvicorn main:app --reload --port 8000",
     "test": "pytest tests/",
     "test:cov": "pytest tests/ --cov=src --cov-report=term-missing --cov-report=html",
     "type-check": "mypy .",
-    "clean": "bash scripts/clean.sh",
-    "clear" : "clear clear",
-    "clear all" : "find . -type f -name '*.pyc' -delete && find . -type d -name '__pycache__' -delete"
+    "clean": "bash scripts/clean.sh"
   }
 }

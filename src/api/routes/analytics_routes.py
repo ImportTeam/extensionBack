@@ -7,6 +7,8 @@ from src.core.database import get_db
 from src.services.impl.search_failure_analyzer import SearchFailureAnalyzer
 from src.repositories.impl.search_failure_repository import SearchFailureRepository
 from src.core.logging import logger
+from src.core.security import SecurityValidator
+from src.core.exceptions import ValidationException
 
 analytics_router = APIRouter(prefix="/api/analytics", tags=["analytics"])
 
@@ -47,8 +49,20 @@ async def get_common_failures(
 ):
     """가장 많은 실패 케이스"""
     try:
+        # 입력 검증: limit은 1-500 범위
+        if not isinstance(limit, int) or limit < 1 or limit > 500:
+            raise HTTPException(
+                status_code=400,
+                detail="limit must be between 1 and 500"
+            )
+        
         failures = SearchFailureRepository.get_common_failures(db, limit=limit)
         return {"failures": failures}
+    except HTTPException:
+        raise
+    except ValidationException as e:
+        logger.warning(f"Validation error: {e.error_code}")
+        raise HTTPException(status_code=400, detail=str(e))
     except Exception as e:
         logger.error(f"Error getting common failures: {e}")
         raise HTTPException(status_code=500, detail="Failed to get common failures")
@@ -90,10 +104,18 @@ async def export_learning_data(
     Query Params:
     - format: json | csv
     """
-    if format not in ["json", "csv"]:
-        raise HTTPException(status_code=400, detail="Invalid format")
-    
     try:
+        # 입력 검증: format 값 검증 및 보안 체크
+        if format not in ["json", "csv"]:
+            raise HTTPException(status_code=400, detail="Invalid format")
+        
+        # format 값이 안전한 문자열인지 확인
+        try:
+            SecurityValidator.validate_query(format)
+        except ValueError as e:
+            logger.warning(f"Security validation failed for format: {e}")
+            raise HTTPException(status_code=400, detail="Invalid format parameter")
+        
         data = SearchFailureAnalyzer.export_learning_data(db, format=format)
         
         if not data:

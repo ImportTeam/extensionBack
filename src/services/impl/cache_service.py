@@ -5,7 +5,11 @@ from redis import Redis
 
 from src.core.config import settings
 from src.core.logging import logger
-from src.core.exceptions import CacheException
+from src.core.exceptions import (
+    CacheException,
+    CacheConnectionException,
+    CacheSerializationException,
+)
 from src.schemas.price_schema import CachedPrice
 from src.utils.hash_utils import generate_cache_key, generate_negative_cache_key
 
@@ -27,7 +31,11 @@ class CacheService:
             logger.info("Redis connection established")
         except Exception as e:
             logger.error(f"Failed to connect to Redis: {e}")
-            raise CacheException(f"Redis connection failed: {e}")
+            raise CacheConnectionException(
+                message=f"Redis connection failed",
+                error_code="CACHE_CONN_FAILED",
+                details={"reason": str(e)}
+            )
     
     def get(self, product_name: str) -> Optional[CachedPrice]:
         """
@@ -45,18 +53,29 @@ class CacheService:
             
             if cached_data:
                 logger.info(f"Cache hit for key: {cache_key}")
-                data = json.loads(cached_data)
-                return CachedPrice(**data)
+                try:
+                    data = json.loads(cached_data)
+                    return CachedPrice(**data)
+                except (json.JSONDecodeError, ValueError) as e:
+                    logger.error(f"Failed to deserialize cache: {e}")
+                    raise CacheSerializationException(
+                        message="Failed to deserialize cached data",
+                        error_code="CACHE_DESER_FAILED",
+                        details={"key": cache_key, "error": str(e)}
+                    )
             
             logger.info(f"Cache miss for key: {cache_key}")
             return None
             
-        except json.JSONDecodeError as e:
-            logger.error(f"Failed to decode cached data: {e}")
-            return None
+        except CacheSerializationException:
+            raise
         except Exception as e:
             logger.error(f"Cache read error: {e}")
-            return None
+            raise CacheConnectionException(
+                message="Cache read failed",
+                error_code="CACHE_READ_FAILED",
+                details={"error": str(e)}
+            )
     
     def set(self, product_name: str, price_data: dict) -> bool:
         """
@@ -71,7 +90,15 @@ class CacheService:
         """
         try:
             cache_key = generate_cache_key(product_name)
-            cached_value = json.dumps(price_data, ensure_ascii=False)
+            try:
+                cached_value = json.dumps(price_data, ensure_ascii=False)
+            except (TypeError, ValueError) as e:
+                logger.error(f"Failed to serialize cache data: {e}")
+                raise CacheSerializationException(
+                    message="Failed to serialize cache data",
+                    error_code="CACHE_SER_FAILED",
+                    details={"error": str(e)}
+                )
             
             self.redis_client.setex(
                 cache_key,
@@ -87,9 +114,15 @@ class CacheService:
             logger.info(f"Cache set for key: {cache_key}, TTL: {ttl}s")
             return True
             
+        except CacheSerializationException:
+            raise
         except Exception as e:
             logger.error(f"Cache write error: {e}")
-            raise CacheException(f"Failed to write cache: {e}")
+            raise CacheConnectionException(
+                message="Failed to write cache",
+                error_code="CACHE_WRITE_FAILED",
+                details={"error": str(e)}
+            )
 
     def get_negative(self, product_name: str) -> Optional[str]:
         """최근 '검색 실패'를 짧게 캐시한 경우 메시지를 반환"""

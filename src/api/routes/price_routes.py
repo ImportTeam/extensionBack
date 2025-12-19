@@ -77,33 +77,67 @@ async def search_price(
     db: Session = Depends(get_db),
     orchestrator: SearchOrchestrator = Depends(get_orchestrator),
 ):
-    """최저가 검색 API (Engine Layer)
+    """최저가 검색 API (Engine Layer + Security Enhanced)
 
     HTTP → Engine → Cache/FastPath/SlowPath 파이프라인으로 실행
 
     Flow:
-        1. HTTP Request 수신
+        1. HTTP Request 수신 (보안 검증)
         2. 쿼리 정규화
         3. Engine에 위임 (Cache → FastPath → SlowPath)
         4. 결과를 HTTP Response로 변환
         5. 백그라운드로 로그 저장
     """
-    logger.info(f"[API] Search request: product_name='{request.product_name}'")
+    from src.core.security import SecurityValidator
+    from src.utils.edge_cases import EdgeCaseHandler
+    
+    try:
+        # Security validation
+        SecurityValidator.validate_query(request.product_name)
+        if request.current_url:
+            SecurityValidator.validate_url(request.current_url)
+        if request.current_price is not None:
+            SecurityValidator.validate_price(request.current_price)
+    except ValueError as e:
+        logger.warning(f"[API] Input validation failed: {e}")
+        return PriceSearchResponse(
+            status="error",
+            data=None,
+            message=f"입력 검증 실패: {str(e)}",
+            error_code="VALIDATION_ERROR",
+        )
+
+    logger.info(f"[API] Search request: product_name (length: {len(request.product_name)})")
 
     # URL에서 pcode 추출
     product_code = request.product_code
     if not product_code and request.current_url:
-        product_code = extract_pcode_from_url(request.current_url)
-        logger.debug(f"[API] Extracted pcode from URL: {product_code}")
+        try:
+            product_code = extract_pcode_from_url(request.current_url)
+            logger.debug(f"[API] Extracted pcode from URL")
+        except Exception as e:
+            logger.warning(f"[API] Failed to extract pcode from URL: {e}")
 
     # 쿼리 정규화
-    normalized_query = normalize_for_search_query(request.product_name)
+    try:
+        normalized_query = normalize_for_search_query(request.product_name)
+        if not normalized_query:
+            raise ValueError("Normalized query is empty")
+    except Exception as e:
+        logger.error(f"[API] Query normalization failed: {e}")
+        return PriceSearchResponse(
+            status="error",
+            data=None,
+            message="검색어 정규화 실패",
+            error_code="NORMALIZATION_ERROR",
+        )
 
     try:
-        # Engine Layer로 위임 (14초 타임아웃)
+        # Engine Layer로 위임 (타임아웃 설정)
+        timeout_s = settings.api_price_search_timeout_s
         result = await asyncio.wait_for(
             orchestrator.search(normalized_query),
-            timeout=float(getattr(settings, "api_price_search_timeout_s", 14.0)),
+            timeout=timeout_s,
         )
 
         # 백그라운드 로그 저장
@@ -138,9 +172,9 @@ async def search_price(
                     lowest_price=result.price,
                     link=result.product_url,
                     mall="다나와",
-                    free_shipping=None,  # TODO: 배송비 정보
-                    top_prices=None,  # TODO: TOP 가격 정보
-                    price_trend=None,  # TODO: 가격 추이
+                    free_shipping=None,
+                    top_prices=None,
+                    price_trend=None,
                     source=result.source,
                     elapsed_ms=result.elapsed_ms,
                 ),
