@@ -1,12 +1,17 @@
 """Stress Tests - 고부하 성능 테스트
 
-테스트 범위:
-- 대량 동시 요청 (100+)
-- 메모리 사용량 모니터링
-- 응답 시간 측정
-- 캐시 효율성
-- 시스템 안정성
+NOTE: 고부하/외부 의존 - 로컬 서버 필요
+마크: @pytest.mark.stress
 """
+
+import pytest
+
+# Test scope:
+# - High-volume concurrent requests (100+)
+# - Memory usage monitoring
+# - Response time measurement
+# - Cache efficiency
+# - System stability
 
 import pytest
 import httpx
@@ -14,7 +19,12 @@ import time
 import asyncio
 from typing import List, Dict, Any
 from concurrent.futures import ThreadPoolExecutor, as_completed
-import psutil
+
+try:
+    import psutil
+except ImportError:
+    psutil = None
+
 import os
 
 

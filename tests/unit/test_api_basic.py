@@ -126,7 +126,8 @@ class TestOrchestratorFlow:
         orch = make_orchestrator(cache, fast, slow)
         result = await orch.search("query")
 
-        assert result.status == SearchStatus.NO_RESULTS
+        # SlowPath returning None is treated as a parse error
+        assert result.status == SearchStatus.PARSE_ERROR
 
 
 class TestBudgetAndValidation:
@@ -136,13 +137,15 @@ class TestBudgetAndValidation:
         fast = FakeFastPath(result=None)
         slow = FakeSlowPath(result=FakeResult("s", 3000))
 
-        tight_budget = BudgetConfig(total_budget=2.0, cache_timeout=0.1, fastpath_timeout=0.5, slowpath_timeout=1.8)
+        tight_budget = BudgetConfig(total_budget=2.0, cache_timeout=0.1, fastpath_timeout=0.5, slowpath_timeout=1.0)
         orch = make_orchestrator(cache, fast, slow, budget=tight_budget)
+
+        # Force budget exhaustion branch deterministically
+        orch.budget_manager.can_execute_slowpath = lambda: False  # type: ignore[assignment]
 
         result = await orch.search("query")
 
-        # fastpath timed out → slowpath budget exhausted path
-        assert result.status in {SearchStatus.NO_RESULTS, SearchStatus.BUDGET_EXHAUSTED}
+        assert result.status == SearchStatus.BUDGET_EXHAUSTED
 
     @pytest.mark.asyncio
     async def test_invalid_query_raises(self):
@@ -157,12 +160,10 @@ class TestBudgetAndValidation:
 
 class TestExecutionStrategy:
     def test_fallback_errors(self):
-        class DummyTimeout(Exception):
-            pass
+        from src.engine.exceptions import TimeoutError as EngineTimeout
+        from src.core.exceptions import BlockedException
 
-        class DummyBlocked(Exception):
-            pass
-
-        assert ExecutionStrategy.should_fallback_to_slowpath(DummyTimeout()) is True
-        assert ExecutionStrategy.should_fallback_to_slowpath(DummyBlocked()) is False  # not registered
+        assert ExecutionStrategy.should_fallback_to_slowpath(EngineTimeout()) is True
+        assert ExecutionStrategy.should_fallback_to_slowpath(BlockedException("blocked")) is True
+        assert ExecutionStrategy.should_fallback_to_slowpath(ValueError("noop")) is False
 

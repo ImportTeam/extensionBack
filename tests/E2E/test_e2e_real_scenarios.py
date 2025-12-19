@@ -1,12 +1,17 @@
 """E2E Tests - 엔드-투-엔드 실제 사용 시나리오
 
-테스트 범위:
-- 실제 사용자 시나리오
-- 다양한 상품 조회
-- 쇼핑몰 비교 기능
-- 가격 변동 추적
-- 프로덕션 환경 시뮬레이션
+NOTE: 실서비스/외부 크롤링 필요 - 로컬 서버 필요
+마크: @pytest.mark.e2e
 """
+
+import pytest
+
+# Test scope:
+# - Real-world user scenarios
+# - Various product queries
+# - Mall comparison features
+# - Price tracking
+# - Production environment simulation
 
 import pytest
 import httpx

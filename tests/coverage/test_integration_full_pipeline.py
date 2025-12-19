@@ -1,12 +1,17 @@
 """Integration/Coverage Tests - 전체 파이프라인 검증
 
-테스트 범위:
-- Cache → FastPath → SlowPath 전체 흐름
-- 다양한 상품 카테고리
-- 캐시 히트/미스
-- 실패 복구 (폴백)
-- 검색 로그 기록
+NOTE: 라이브 서비스 + 외부 크롤링 의존 - 로컬 서버 필요
+마크: @pytest.mark.integration
 """
+
+import pytest
+
+# Test scope:
+# - Cache > FastPath > SlowPath full flow
+# - Various product categories
+# - Cache hit/miss
+# - Failure recovery (fallback)
+# - Search logging
 
 import pytest
 import httpx
