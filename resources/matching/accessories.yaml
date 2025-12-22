@@ -39,6 +39,16 @@ accessory_keywords:
   - 밴드
   - 루프
 
+# 액세서리 제조사/브랜드 - 직접 차단
+accessory_brands:
+  - 폰트리
+  - 스펙
+  - 아르고스
+  - 벨로루기
+  - 하이디라
+  - 스핑크
+  - 라엑스
+
 # 본체 힌트 키워드 - 액세서리 오탐 방지용
 main_product_hints:
   - 노트북

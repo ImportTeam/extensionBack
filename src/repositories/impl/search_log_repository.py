@@ -23,6 +23,8 @@ class SearchLogRepository:
         product_id: Optional[str] = None,
         source: Optional[str] = None,
         elapsed_ms: Optional[float] = None,
+        top_prices: Optional[str] = None,
+        price_trend: Optional[str] = None,
     ) -> SearchLog:
         """검색 로그 생성"""
         try:
@@ -34,6 +36,8 @@ class SearchLogRepository:
                 status=status,
                 source=source,
                 elapsed_ms=elapsed_ms,
+                top_prices=top_prices,
+                price_trend=price_trend,
             )
             self.db.add(log)
             self.db.commit()

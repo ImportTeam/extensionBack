@@ -144,24 +144,53 @@ async def search_price(
         )
 
     try:
+        # 선택된 옵션을 검색 쿼리에 포함
+        search_query = normalized_query
+        if request.selected_options:
+            options_str = " ".join([f"{opt.name}:{opt.value}" for opt in request.selected_options])
+            search_query = f"{normalized_query} {options_str}"
+            logger.debug(f"[API] Added options to query: {search_query}")
+        
         # Engine Layer로 위임 (타임아웃 설정)
         timeout_s = settings.api_price_search_timeout_s
         result = await asyncio.wait_for(
-            orchestrator.search(normalized_query),
+            orchestrator.search(search_query),
             timeout=timeout_s,
         )
 
         # 백그라운드 로그 저장
+        import json
+        top_prices_json = None
+        price_trend_json = None
+        if result.top_prices:
+            try:
+                top_prices_json = json.dumps(result.top_prices, ensure_ascii=False)
+            except:
+                pass
+        if result.price_trend:
+            try:
+                price_trend_json = json.dumps(result.price_trend, ensure_ascii=False)
+            except:
+                pass
+        
+        # 옵션 정보를 쿼리명에 추가해서 로깅
+        query_with_options = request.product_name
+        if request.selected_options:
+            options_str = ", ".join([f"{opt.name}={opt.value}" for opt in request.selected_options])
+            query_with_options = f"{request.product_name} [{options_str}]"
+        
         background_tasks.add_task(
             _log_search,
             db=db,
-            query_name=request.product_name,
+            query_name=query_with_options,
             origin_price=request.current_price,
             found_price=result.price if result.is_success else None,
             product_id=result.product_id if result.is_success else None,
             status="SUCCESS" if result.is_success else "FAIL",
             source=result.source,
             elapsed_ms=result.elapsed_ms,
+            top_prices=top_prices_json,
+            price_trend=price_trend_json,
         )
 
         # 성공 응답
@@ -249,6 +278,7 @@ async def search_price(
             data=None,
             message=error_message,
             error_code=result.status.value,
+            selected_options=request.selected_options,
         )
 
     except asyncio.TimeoutError:
@@ -258,6 +288,7 @@ async def search_price(
             data=None,
             message="검색 시간이 초과되었습니다. 잠시 후 다시 시도해주세요.",
             error_code="TIMEOUT",
+            selected_options=request.selected_options,
         )
     except Exception as e:
         logger.error(f"[API] Search failed: query='{normalized_query}'", exc_info=True)
@@ -266,6 +297,7 @@ async def search_price(
             data=None,
             message=f"검색 중 오류가 발생했습니다: {str(e)}",
             error_code="INTERNAL_ERROR",
+            selected_options=request.selected_options,
         )
 
 
@@ -290,6 +322,8 @@ def _log_search(
     source: Optional[str] = None,
     elapsed_ms: Optional[float] = None,
     product_id: Optional[str] = None,
+    top_prices: Optional[str] = None,
+    price_trend: Optional[str] = None,
 ):
     """검색 로그 저장 (백그라운드)"""
     try:
@@ -302,6 +336,8 @@ def _log_search(
             status=status,
             source=source,
             elapsed_ms=elapsed_ms,
+            top_prices=top_prices,
+            price_trend=price_trend,
         )
         db.commit()
         logger.debug(f"[API] Search log saved: query='{query_name}', status={status}")

@@ -59,11 +59,12 @@ class DanawaSearchHelper:
         """계층적 폴백 검색 후보 생성 (효율적)
         
         우선순위:
-        1. 연도 제거 버전 (성공률 최고)
-        2. 정규화된 버전
-        3. 브랜드 + 모델 (칩셋 포함)
-        4. 모델명만
-        5. 브랜드만
+        1. 연도 + 세대(M4, Pro 등) 제거 버전 (성공률 최고) ← 가장 광범위
+        2. 연도만 제거 버전
+        3. 정규화된 버전
+        4. 브랜드 + 모델 (칩셋 포함)
+        5. 모델명만
+        6. 브랜드만
         """
         from src.utils.text_utils import clean_product_name
         from src.utils.normalization.normalize import normalize_search_query
@@ -80,11 +81,19 @@ class DanawaSearchHelper:
                 if reason:
                     logger.debug(f"[SearchCandidates] Added: '{cand}' ({reason})")
 
-        # 🔴 핵심: 연도 제거가 가장 먼저! (다나와 검색엔진이 연도 조건에서 실패)
+        # 🔴 핵심 1: 연도 + 세대 제거 (가장 광범위 검색)
+        # 예: "Apple 2025 맥북 에어 15 M4" → "Apple 맥북 에어 15"
+        no_year_no_gen = re.sub(r"\b(19|20)\d{2}\b", " ", product_name)
+        no_year_no_gen = re.sub(r"\b(?i)(M|m)\s*\d+(?:\s*pro|pro)?\b", " ", no_year_no_gen)  # M1-M9, Pro 제거
+        no_year_no_gen = re.sub(r"\s+", " ", no_year_no_gen).strip()
+        if no_year_no_gen and no_year_no_gen.lower() != product_name.lower():
+            add_candidate(no_year_no_gen, reason="연도+세대 제거 (광범위)")
+        
+        # 🔴 핵심 2: 연도 제거만 (연도+세대 제거보다 덜 광범위)
         no_year = re.sub(r"\b(19|20)\d{2}\b", " ", product_name)
         no_year = re.sub(r"\s+", " ", no_year).strip()
-        if no_year and no_year.lower() != product_name.lower():
-            add_candidate(no_year, reason="연도 제거 버전")
+        if no_year and no_year.lower() not in seen:
+            add_candidate(no_year, reason="연도 제거")
         
         # 정규화된 전체
         normalized = normalize_search_query(product_name)

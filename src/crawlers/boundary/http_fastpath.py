@@ -141,6 +141,13 @@ class DanawaHttpFastPath:
             # YAML 파일에서 로드
             keywords_data = load_accessory_keywords()
             accessory_keywords = keywords_data.get("accessory_keywords", set())
+            accessory_brands = keywords_data.get("accessory_brands", set())
+            
+            # 제조사/브랜드 기반 필터링 (우선순위: 높음)
+            matched_brands = [b for b in accessory_brands if b.lower() in name_lower]
+            if matched_brands:
+                logger.info(f"[ACCESSORY_FILTER] Matched brands: {matched_brands} in '{product_name[:80]}' → SKIP")
+                return True
             
             # 키워드 기반 필터링
             matched_keywords = [k for k in accessory_keywords if k in name_lower]

@@ -17,6 +17,8 @@ class SearchLog(Base):
     status = Column(String, nullable=False, index=True)  # HIT, MISS, FAIL
     source = Column(String, nullable=True)  # cache, fastpath, slowpath
     elapsed_ms = Column(Float, nullable=True)  # 검색 소요 시간
+    top_prices = Column(Text, nullable=True)  # JSON: TOP 3 가격 목록 (크롤링 강화용)
+    price_trend = Column(Text, nullable=True)  # JSON: 가격 변동 추이
     created_at = Column(TIMESTAMP, server_default=func.now(), index=True)
     
     # 복합 인덱스 (통계 쿼리 최적화)

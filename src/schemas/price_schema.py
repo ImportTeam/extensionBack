@@ -93,6 +93,8 @@ class PriceSearchResponse(BaseModel):
     data: Optional[PriceData] = Field(None, description="가격 정보")
     message: str = Field(..., description="응답 메시지")
     error_code: str | None = Field(None, description="에러 코드 (fail 시)")
+    selected_options: Optional[List[SelectedOption]] = Field(None, description="선택된 옵션 (에코)")
+
 
 
 class CachedPrice(BaseModel):
