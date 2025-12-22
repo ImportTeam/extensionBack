@@ -14,6 +14,16 @@ async def lifespan(app: FastAPI):
     """애플리케이션 생명주기"""
     logger.info("Starting application...")
     init_db()
+    
+    # 스케줄러 시작
+    try:
+        from src.scheduler.weekly_analytics import WeeklyAnalyticsScheduler
+        scheduler = WeeklyAnalyticsScheduler.schedule_with_apscheduler()
+        scheduler.start()
+        logger.info("Weekly analytics scheduler started")
+    except Exception as e:
+        logger.warning(f"Failed to start scheduler: {e}")
+    
     logger.info("Application started")
     yield
     logger.info("Shutting down application...")

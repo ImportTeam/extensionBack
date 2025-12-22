@@ -144,12 +144,24 @@ async def search_price(
         )
 
     try:
-        # 선택된 옵션을 검색 쿼리에 포함
+        # 선택된 옵션/원본 옵션 문자열을 검색 쿼리에 포함 (signals.yaml 규칙으로 필터링)
         search_query = normalized_query
-        if request.selected_options:
-            options_str = " ".join([f"{opt.name}:{opt.value}" for opt in request.selected_options])
-            search_query = f"{normalized_query} {options_str}"
-            logger.debug(f"[API] Added options to query: {search_query}")
+        try:
+            from src.utils.text_utils import parse_fe_options_text, build_option_query_tokens
+
+            pairs: list[tuple[str, str]] = []
+            if request.selected_options:
+                pairs.extend([(opt.name, opt.value) for opt in request.selected_options if opt.name and opt.value])
+            if getattr(request, "options_text", None):
+                pairs.extend(parse_fe_options_text(request.options_text))
+
+            option_tokens = build_option_query_tokens(pairs)
+            if option_tokens:
+                options_str = " ".join(option_tokens)
+                search_query = f"{normalized_query} {options_str}"
+                logger.debug(f"[API] Added filtered options to query: {search_query}")
+        except Exception as e:
+            logger.warning(f"[API] Failed to apply option filters: {e}")
         
         # Engine Layer로 위임 (타임아웃 설정)
         timeout_s = settings.api_price_search_timeout_s
@@ -173,11 +185,22 @@ async def search_price(
             except:
                 pass
         
-        # 옵션 정보를 쿼리명에 추가해서 로깅
+        # 옵션 정보를 쿼리명에 추가해서 로깅 (필터링된 토큰만)
         query_with_options = request.product_name
-        if request.selected_options:
-            options_str = ", ".join([f"{opt.name}={opt.value}" for opt in request.selected_options])
-            query_with_options = f"{request.product_name} [{options_str}]"
+        try:
+            from src.utils.text_utils import parse_fe_options_text, build_option_query_tokens
+
+            log_pairs: list[tuple[str, str]] = []
+            if request.selected_options:
+                log_pairs.extend([(opt.name, opt.value) for opt in request.selected_options if opt.name and opt.value])
+            if getattr(request, "options_text", None):
+                log_pairs.extend(parse_fe_options_text(request.options_text))
+
+            log_tokens = build_option_query_tokens(log_pairs, max_tokens=10)
+            if log_tokens:
+                query_with_options = f"{request.product_name} [{', '.join(log_tokens)}]"
+        except Exception:
+            pass
         
         background_tasks.add_task(
             _log_search,

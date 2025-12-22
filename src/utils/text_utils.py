@@ -439,6 +439,114 @@ def extract_product_signals(text: str) -> dict:
     }
 
 
+def parse_fe_options_text(options_text: str) -> list[tuple[str, str]]:
+    """FE에서 전달된 options 문자열을 (key, value) 쌍으로 파싱.
+
+    지원 포맷 예:
+    - "색상: 스페이스 블랙"
+    - "CPU 모델명 × GPU 모델명 × RAM용량 × 저장용량 × 키보드 언어: M5 10코어 × 10코어 × 16GB × 512GB × 한글"
+    - 위 두 포맷이 ","로 함께 들어오는 케이스
+    """
+    if not options_text:
+        return []
+
+    text = re.sub(r"\s+", " ", str(options_text)).strip()
+    if not text:
+        return []
+
+    pairs: list[tuple[str, str]] = []
+
+    # 쉼표로 1차 분리
+    parts = [p.strip() for p in text.split(",") if p.strip()]
+    for part in parts:
+        if ":" not in part:
+            continue
+
+        left, right = part.split(":", 1)
+        left = left.strip()
+        right = right.strip()
+
+        # 단일 key:value
+        if "×" not in left and "×" not in right:
+            if left and right:
+                pairs.append((left, right))
+            continue
+
+        # 다중 키/값: keys "×" values
+        keys = [k.strip() for k in left.split("×") if k.strip()]
+        values = [v.strip() for v in right.split("×") if v.strip()]
+
+        for k, v in zip(keys, values):
+            if k and v:
+                pairs.append((k, v))
+
+    return pairs
+
+
+def build_option_query_tokens(
+    selected_pairs: list[tuple[str, str]],
+    *,
+    max_tokens: int = 10,
+) -> list[str]:
+    """signals.yaml 규칙을 기반으로 옵션 쌍을 검색 쿼리 토큰으로 변환."""
+    if not selected_pairs:
+        return []
+
+    signals = load_matching_signals()
+    allow_keys: set[str] = set(signals.get("option_keys_allowlist", set()))
+    deny_keys: set[str] = set(signals.get("option_keys_denylist", set()))
+    value_blacklist: set[str] = set(signals.get("option_value_blacklist_terms", set()))
+    drop_regex: list[str] = list(signals.get("option_value_drop_regex", []))
+
+    compiled = []
+    for pat in drop_regex:
+        try:
+            compiled.append(re.compile(pat))
+        except re.error:
+            continue
+
+    tokens: list[str] = []
+    seen: set[str] = set()
+
+    for key, value in selected_pairs:
+        k = re.sub(r"\s+", " ", str(key)).strip()
+        v = re.sub(r"\s+", " ", str(value)).strip()
+        if not k or not v:
+            continue
+
+        # 키 denylist
+        if any(d in k for d in deny_keys):
+            continue
+
+        # 키 allowlist (비어있으면 allow-all)
+        if allow_keys and k not in allow_keys:
+            continue
+
+        # 값 블랙리스트/정규식
+        lower_v = v.lower()
+        if any(term in v for term in value_blacklist):
+            continue
+        if any(rx.search(v) for rx in compiled):
+            continue
+
+        # 값 정리: 불필요한 구두점/공백 정리
+        v_norm = v.replace("·", " ")
+        v_norm = re.sub(r"\s+", " ", v_norm).strip()
+        # 색상 등은 공백 제거한 형태도 검색 성능이 좋아서 같이 맞춰줌
+        if k in {"색상"}:
+            v_norm = v_norm.replace(" ", "")
+
+        token = f"{k}:{v_norm}"
+        if token.lower() in seen:
+            continue
+        seen.add(token.lower())
+        tokens.append(token)
+        if len(tokens) >= max_tokens:
+            break
+
+    return tokens
+
+
 # ==================== Utils: 가격 추출 ====================
 
 def extract_price_from_text(price_text: str) -> int:

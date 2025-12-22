@@ -57,12 +57,20 @@ def load_search_categories() -> Dict[str, Any]:
     return cast(Dict[str, Any], data.get("categories", {}))
 
 
-def load_matching_signals() -> Dict[str, set[str]]:
-    """매칭 신호 관련 블랙리스트/접두사 로드"""
+def load_matching_signals() -> Dict[str, Any]:
+    """매칭 신호 관련 설정 로드
+
+    - 모델코드/숫자 신호(기존)
+    - FE 옵션 문자열 필터링 규칙(추가)
+    """
     data = load_yaml_resource("matching/signals.yaml")
     return {
         "model_code_blacklist": set(data.get("model_code_blacklist", [])),
-        "named_number_stop_prefixes": set(data.get("named_number_stop_prefixes", []))
+        "named_number_stop_prefixes": set(data.get("named_number_stop_prefixes", [])),
+        "option_keys_allowlist": set(data.get("option_keys_allowlist", [])),
+        "option_keys_denylist": set(data.get("option_keys_denylist", [])),
+        "option_value_blacklist_terms": set(data.get("option_value_blacklist_terms", [])),
+        "option_value_drop_regex": list(data.get("option_value_drop_regex", [])),
     }
 
 

@@ -17,6 +17,12 @@ class PriceSearchRequest(BaseModel):
     current_url: Optional[str] = Field(None, max_length=2048, description="현재 URL")
     product_code: Optional[str] = Field(None, max_length=50, description="다나와 상품 코드(pcode)")
     selected_options: Optional[List[SelectedOption]] = Field(None, max_length=50, description="사용자가 선택한 옵션")
+    options_text: Optional[str] = Field(
+        None,
+        alias="options",
+        max_length=3000,
+        description="FE에서 전달된 원본 옵션 문자열 (예: '색상: ... , CPU ...: ...')",
+    )
     
     @field_validator('product_name')
     @classmethod

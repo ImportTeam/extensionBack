@@ -6,9 +6,11 @@ from sqlalchemy.orm import Session
 from src.core.database import get_db
 from src.services.impl.search_failure_analyzer import SearchFailureAnalyzer
 from src.repositories.impl.search_failure_repository import SearchFailureRepository
+from src.services.impl.analytics_service import AnalyticsService
 from src.core.logging import logger
 from src.core.security import SecurityValidator
 from src.core.exceptions import ValidationException
+from datetime import datetime
 
 analytics_router = APIRouter(prefix="/api/analytics", tags=["analytics"])
 
@@ -173,3 +175,293 @@ async def resolve_failure(
     except Exception as e:
         logger.error(f"Error resolving failure: {e}")
         raise HTTPException(status_code=500, detail="Failed to resolve failure")
+
+
+# ========================= NEW: 주간 분석 리포트 API =========================
+
+
+@analytics_router.get("/v2/weekly-report")
+async def get_weekly_report(db: Session = Depends(get_db)):
+    """주간 분석 리포트
+    
+    Returns:
+        - 총 검색 수, 성공률, 평균 응답시간
+        - 출처별 성공률 (cache/fastpath/slowpath)
+        - 인기 검색어, 실패한 검색어
+        - 가격 절감 분석
+        - 옵션 효율성 분석
+    """
+    try:
+        service = AnalyticsService(db)
+        report = service.generate_weekly_report()
+        
+        return {
+            "status": "success",
+            "data": report,
+            "generated_at": datetime.utcnow().isoformat(),
+        }
+    except Exception as e:
+        logger.error(f"[Analytics] Failed to get weekly report: {e}", exc_info=True)
+        raise HTTPException(status_code=500, detail=f"분석 생성 실패: {str(e)}")
+
+
+@analytics_router.get("/v2/recommendations")
+async def get_improvement_recommendations(db: Session = Depends(get_db)):
+    """크롤링 개선 권장사항
+    
+    Returns:
+        - FastPath 성공률 개선 권장
+        - 실패한 검색어 패턴
+        - 문제 상품 식별
+        - 옵션 효율성 인사이트
+        - 성능 최적화 포인트
+    """
+    try:
+        service = AnalyticsService(db)
+        recommendations = service.get_improvement_recommendations()
+        
+        return {
+            "status": "success",
+            "data": recommendations,
+            "generated_at": datetime.utcnow().isoformat(),
+        }
+    except Exception as e:
+        logger.error(f"[Analytics] Failed to get recommendations: {e}", exc_info=True)
+        raise HTTPException(status_code=500, detail=f"권장사항 생성 실패: {str(e)}")
+
+
+@analytics_router.get("/v2/daily-snapshot")
+async def get_daily_snapshot(days: Optional[int] = 1, db: Session = Depends(get_db)):
+    """일일 스냅샷 (대시보드용)
+    
+    Args:
+        days: 분석 기간 (기본값: 1일)
+        
+    Returns:
+        - 총 검색 수
+        - 성공률
+        - 캐시 히트율
+        - 평균 응답시간
+        - 절감액 합계
+        - 출처별 분석
+    """
+    try:
+        if days < 1 or days > 30:
+            raise ValueError("days는 1~30 사이여야 합니다")
+        
+        service = AnalyticsService(db)
+        snapshot = service.get_daily_snapshot(days=days)
+        
+        return {
+            "status": "success",
+            "data": snapshot,
+            "generated_at": datetime.utcnow().isoformat(),
+        }
+    except ValueError as e:
+        raise HTTPException(status_code=400, detail=str(e))
+    except Exception as e:
+        logger.error(f"[Analytics] Failed to get snapshot: {e}", exc_info=True)
+        raise HTTPException(status_code=500, detail=f"스냅샷 생성 실패: {str(e)}")
+
+
+@analytics_router.get("/v2/success-rate")
+async def get_success_rate(days: Optional[int] = 7, db: Session = Depends(get_db)):
+    """출처별 성공률 상세 분석
+    
+    Args:
+        days: 분석 기간 (기본값: 7일)
+        
+    Returns:
+        - cache: 캐시 성공률
+        - fastpath: HTTP 크롤러 성공률
+        - slowpath: Playwright 크롤러 성공률
+    """
+    try:
+        if days < 1 or days > 30:
+            raise ValueError("days는 1~30 사이여야 합니다")
+        
+        service = AnalyticsService(db)
+        stats = service.repository.get_success_rate_by_source(days=days)
+        
+        return {
+            "status": "success",
+            "data": {
+                "period_days": days,
+                "sources": stats,
+            },
+            "generated_at": datetime.utcnow().isoformat(),
+        }
+    except ValueError as e:
+        raise HTTPException(status_code=400, detail=str(e))
+    except Exception as e:
+        logger.error(f"[Analytics] Failed to get success rate: {e}", exc_info=True)
+        raise HTTPException(status_code=500, detail=str(e))
+
+
+@analytics_router.get("/v2/failed-queries")
+async def get_failed_queries(days: Optional[int] = 7, limit: Optional[int] = 20, db: Session = Depends(get_db)):
+    """실패한 검색어 분석
+    
+    Args:
+        days: 분석 기간 (기본값: 7일)
+        limit: 조회 개수 (기본값: 20)
+        
+    Returns:
+        - 검색어, 실패 횟수, 마지막 시도
+    """
+    try:
+        if days < 1 or days > 30:
+            raise ValueError("days는 1~30 사이여야 합니다")
+        if limit < 1 or limit > 100:
+            raise ValueError("limit는 1~100 사이여야 합니다")
+        
+        service = AnalyticsService(db)
+        failed = service.repository.get_failed_queries(days=days, limit=limit)
+        
+        return {
+            "status": "success",
+            "data": {
+                "period_days": days,
+                "count": len(failed),
+                "failed_queries": failed,
+            },
+            "generated_at": datetime.utcnow().isoformat(),
+        }
+    except ValueError as e:
+        raise HTTPException(status_code=400, detail=str(e))
+    except Exception as e:
+        logger.error(f"[Analytics] Failed to get failed queries: {e}", exc_info=True)
+        raise HTTPException(status_code=500, detail=str(e))
+
+
+@analytics_router.get("/v2/trending-queries")
+async def get_trending_queries(days: Optional[int] = 7, limit: Optional[int] = 20, db: Session = Depends(get_db)):
+    """인기 검색어 분석
+    
+    Args:
+        days: 분석 기간 (기본값: 7일)
+        limit: 조회 개수 (기본값: 20)
+        
+    Returns:
+        - 검색어, 총 검색 수, 성공 수, 성공률
+    """
+    try:
+        if days < 1 or days > 30:
+            raise ValueError("days는 1~30 사이여야 합니다")
+        if limit < 1 or limit > 100:
+            raise ValueError("limit는 1~100 사이여야 합니다")
+        
+        service = AnalyticsService(db)
+        trending = service.repository.get_trending_queries(days=days, limit=limit)
+        
+        return {
+            "status": "success",
+            "data": {
+                "period_days": days,
+                "count": len(trending),
+                "trending_queries": trending,
+            },
+            "generated_at": datetime.utcnow().isoformat(),
+        }
+    except ValueError as e:
+        raise HTTPException(status_code=400, detail=str(e))
+    except Exception as e:
+        logger.error(f"[Analytics] Failed to get trending queries: {e}", exc_info=True)
+        raise HTTPException(status_code=500, detail=str(e))
+
+
+@analytics_router.get("/v2/performance")
+async def get_performance_metrics(days: Optional[int] = 7, db: Session = Depends(get_db)):
+    """성능 메트릭 (응답시간 분석)
+    
+    Args:
+        days: 분석 기간 (기본값: 7일)
+        
+    Returns:
+        - 평균, 최소, 최대, 50/95/99 percentile (ms)
+    """
+    try:
+        if days < 1 or days > 30:
+            raise ValueError("days는 1~30 사이여야 합니다")
+        
+        service = AnalyticsService(db)
+        perf = service.repository.get_performance_metrics(days=days)
+        
+        return {
+            "status": "success",
+            "data": {
+                "period_days": days,
+                "metrics": perf,
+            },
+            "generated_at": datetime.utcnow().isoformat(),
+        }
+    except ValueError as e:
+        raise HTTPException(status_code=400, detail=str(e))
+    except Exception as e:
+        logger.error(f"[Analytics] Failed to get performance: {e}", exc_info=True)
+        raise HTTPException(status_code=500, detail=str(e))
+
+
+@analytics_router.get("/v2/price-savings")
+async def get_price_savings(days: Optional[int] = 7, db: Session = Depends(get_db)):
+    """가격 절감 분석
+    
+    Args:
+        days: 분석 기간 (기본값: 7일)
+        
+    Returns:
+        - 총 절감액, 평균 절감액, 절감율, 건수
+    """
+    try:
+        if days < 1 or days > 30:
+            raise ValueError("days는 1~30 사이여야 합니다")
+        
+        service = AnalyticsService(db)
+        savings = service.repository.get_price_diff_analysis(days=days)
+        
+        return {
+            "status": "success",
+            "data": {
+                "period_days": days,
+                "analysis": savings,
+            },
+            "generated_at": datetime.utcnow().isoformat(),
+        }
+    except ValueError as e:
+        raise HTTPException(status_code=400, detail=str(e))
+    except Exception as e:
+        logger.error(f"[Analytics] Failed to get price savings: {e}", exc_info=True)
+        raise HTTPException(status_code=500, detail=str(e))
+
+
+@analytics_router.get("/v2/options-effectiveness")
+async def get_options_effectiveness(days: Optional[int] = 7, db: Session = Depends(get_db)):
+    """옵션 효율성 분석
+    
+    Args:
+        days: 분석 기간 (기본값: 7일)
+        
+    Returns:
+        - 옵션 포함 vs 미포함 성공률 비교
+        - 개선율
+    """
+    try:
+        if days < 1 or days > 30:
+            raise ValueError("days는 1~30 사이여야 합니다")
+        
+        service = AnalyticsService(db)
+        effectiveness = service.repository.get_options_effectiveness(days=days)
+        
+        return {
+            "status": "success",
+            "data": {
+                "period_days": days,
+                "analysis": effectiveness,
+            },
+            "generated_at": datetime.utcnow().isoformat(),
+        }
+    except ValueError as e:
+        raise HTTPException(status_code=400, detail=str(e))
+    except Exception as e:
+        logger.error(f"[Analytics] Failed to get options effectiveness: {e}", exc_info=True)
+        raise HTTPException(status_code=500, detail=str(e))
