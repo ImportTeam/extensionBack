@@ -262,7 +262,13 @@ def weighted_match_score(query: str, candidate: str) -> float:
     # 띄어쓰기/붙임 차이를 견디기 위해 공백 제거 버전도 같이 평가
     def _nospace(s: str) -> str:
         s = (s or "").lower()
+        # 년형 제거 (예: "2025년형" → "2025")
+        s = s.replace("년형", "").replace("년식", "")
+        # 애플/Apple 통일
+        s = s.replace("애플", "apple")
+        # 공백 제거
         s = re.sub(r"\s+", "", s)
+        # 특수문자 제거
         s = re.sub(r"[^0-9a-zA-Z가-힣]", "", s)
         return s
 

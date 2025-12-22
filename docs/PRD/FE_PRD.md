@@ -62,7 +62,3 @@ fetch('/api/v1/price/search', {
 .then(r => r.json())
 .then(render)
 ```
-
-미구현/한계
-- 가격 추이(`price_trend`)는 크롤러에서 확보되지 않을 수 있습니다(현재 선택적 필드). UI는 이를 정상 처리해야 합니다.
-

@@ -158,6 +158,7 @@ async def search_price(
             query_name=request.product_name,
             origin_price=request.current_price,
             found_price=result.price if result.is_success else None,
+            product_id=result.product_id if result.is_success else None,
             status="SUCCESS" if result.is_success else "FAIL",
             source=result.source,
             elapsed_ms=result.elapsed_ms,
@@ -187,16 +188,18 @@ async def search_price(
             top_prices_list = None
             if top_prices_data and isinstance(top_prices_data, list):
                 from src.schemas.price_schema import MallPrice
+                # Sort by price (ascending) and take TOP 3
+                sorted_prices = sorted(top_prices_data, key=lambda x: x.get("price", float('inf')))[:3]
                 top_prices_list = [
                     MallPrice(
-                        rank=item.get("rank", idx+1),
+                        rank=idx+1,  # Re-rank after sorting
                         mall=item.get("mall", "알 수 없음"),
                         price=item.get("price", 0),
                         free_shipping=item.get("free_shipping", False),
                         delivery=item.get("delivery", ""),
                         link=item.get("link", ""),
                     )
-                    for idx, item in enumerate(top_prices_data[:3])  # TOP 3 only
+                    for idx, item in enumerate(sorted_prices)
                 ]
 
             return PriceSearchResponse(
@@ -266,6 +269,7 @@ def _log_search(
     status: str,
     source: Optional[str] = None,
     elapsed_ms: Optional[float] = None,
+    product_id: Optional[str] = None,
 ):
     """검색 로그 저장 (백그라운드)"""
     try:
@@ -274,7 +278,10 @@ def _log_search(
             query_name=query_name,
             origin_price=origin_price,
             found_price=found_price,
+            product_id=product_id,
             status=status,
+            source=source,
+            elapsed_ms=elapsed_ms,
         )
         db.commit()
         logger.debug(f"[API] Search log saved: query='{query_name}', status={status}")

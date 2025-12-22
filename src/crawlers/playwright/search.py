@@ -97,9 +97,18 @@ async def search_product(
             except Exception:
                 continue
 
-        # 🔴 기가차드 수정: 너무 낮은 점수면(검색 결과가 엉뚱함) 결과 없음 처리 (오매핑 방지)
-        if best_href and best_score >= 45.0:
+        # 후보 점수 기준 완화: 45.0 → 30.0 (현실적 매칭)
+        # 최소 1개는 보장 (best_score > 10이면 유효하다고 판단)
+        MIN_SCORE_THRESHOLD = 30.0
+        MIN_BEST_SCORE = 10.0
+        
+        if best_href and best_score >= MIN_SCORE_THRESHOLD:
             href = best_href
+            logger.debug(f"[PLAYWRIGHT] Selected with good score: {best_score:.1f} >= {MIN_SCORE_THRESHOLD}")
+        elif best_href and best_score >= MIN_BEST_SCORE:
+            # 낮은 점수지만 최소 기준 넘음 → 시도할 가치 있음
+            href = best_href
+            logger.info(f"[PLAYWRIGHT] Selected with acceptable score: {best_score:.1f} (threshold: {MIN_BEST_SCORE})")
         else:
             logger.warning(f"[PLAYWRIGHT] No candidate matched query '{used_query}' with sufficient score (best: {best_score:.1f})")
             return None

@@ -45,5 +45,3 @@ Quick Start
 - 브라우저 컨텍스트 재사용으로 동시성/속도 개선
 - 실패 이벤트 및 지표 수집(모니터링)
 
-참고
-- 주요 구현 파일: [src/crawlers/danawa_crawler.py](src/crawlers/danawa_crawler.py)

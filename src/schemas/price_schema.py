@@ -1,6 +1,6 @@
 """Pydantic 스키마 정의 (Security & Validation Enhanced)"""
-from typing import Optional, List
-from pydantic import BaseModel, Field, field_validator
+from typing import Optional, List, Any
+from pydantic import BaseModel, Field, field_validator, model_validator
 from datetime import datetime
 
 
@@ -88,16 +88,46 @@ class PriceSearchResponse(BaseModel):
 
 
 class CachedPrice(BaseModel):
-    """캐시된 가격 정보 (strict typing)"""
-    product_name: str = Field(..., description="상품명")
-    lowest_price: int = Field(..., ge=0, description="최저가")
-    product_url: str = Field(..., description="상품 URL")  # link → product_url로 통일
-    source: str = Field(..., description="cache | fastpath | slowpath")
+    """캐시된 가격 정보.
+
+    - 신규 포맷: product_name/lowest_price/product_url/source/updated_at (+ product_id/top_prices)
+    - 레거시 포맷: {"product_url": "...", "price": 12345} 도 허용 (자동 변환)
+    """
+
+    product_name: str = Field("", description="상품명")
+    product_id: str | None = Field(None, description="상품 ID (pcode 등)")
+    lowest_price: int = Field(0, ge=0, description="최저가")
+    product_url: str = Field("", description="상품 URL")  # link → product_url로 통일
+    source: str = Field("unknown", description="cache | fastpath | slowpath")
     mall: str | None = Field(None, description="쇼핑몰")
     free_shipping: bool | None = Field(None, description="무료배송")
     top_prices: list[MallPrice] | None = Field(None, description="TOP 가격")
     price_trend: list[PriceTrendPoint] | None = Field(None, description="가격 추이")
-    updated_at: str = Field(..., description="업데이트 시간")
+    updated_at: str = Field("", description="업데이트 시간")
+
+    @model_validator(mode="before")
+    @classmethod
+    def _coerce_legacy(cls, data: Any):
+        if not isinstance(data, dict):
+            return data
+
+        # legacy: price -> lowest_price
+        if "lowest_price" not in data and "price" in data:
+            data["lowest_price"] = data.get("price")
+
+        # legacy: link -> product_url
+        if "product_url" not in data and "link" in data:
+            data["product_url"] = data.get("link")
+
+        if not data.get("source"):
+            data["source"] = "unknown"
+        if not data.get("updated_at"):
+            data["updated_at"] = datetime.utcnow().isoformat()
+
+        # product_name이 없으면 빈 문자열로 둠 (캐시 히트는 URL/가격이 핵심)
+        if "product_name" not in data or data.get("product_name") is None:
+            data["product_name"] = ""
+        return data
 
 
 class HealthResponse(BaseModel):

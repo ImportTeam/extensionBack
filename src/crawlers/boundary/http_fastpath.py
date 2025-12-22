@@ -6,12 +6,15 @@
 from __future__ import annotations
 
 import asyncio
+import html as _html
+import re
 from typing import Optional, List
 from urllib.parse import quote
 
 from src.core.config import settings
 from src.core.logging import logger
 from src.crawlers.http_client import get_shared_http_client
+from src.utils.resource_loader import load_accessory_keywords
 
 from .http_fastpath_parsing import (
     is_probably_invalid_html,
@@ -47,6 +50,17 @@ class DanawaHttpFastPath:
     def __init__(self) -> None:
         self.search_url = "https://search.danawa.com/dsearch.php"
         self.product_url = "https://prod.danawa.com/info/"
+
+    @staticmethod
+    def _extract_html_title(html_text: str) -> str:
+        if not html_text:
+            return ""
+        m = re.search(r"<title>(.*?)</title>", html_text, flags=re.IGNORECASE | re.DOTALL)
+        if not m:
+            return ""
+        title = _html.unescape(m.group(1))
+        title = re.sub(r"\s+", " ", title).strip()
+        return title
 
     async def _fetch_html(self, url: str, timeout_ms: int) -> Optional[str]:
         # Increased minimum from 0.2s to 1.0s for realistic network conditions
@@ -110,27 +124,33 @@ class DanawaHttpFastPath:
             search_budget_ms = max(500, total_timeout_ms - product_budget_floor_ms)
         search_deadline = loop.time() + (search_budget_ms / 1000.0)
 
-        # 첫 후보만 시도 (성공 시 끝, 실패 시 Playwright로 바로 넘어가기)
+        # 첫 후보만 시도 (성공 시 끝, 실패 시 Playwright로 바로 넣어가기)
         max_candidates = 1
-        max_pcodes_per_candidate = 1  # 첫 pcode만 (여러 개 시도하면 예산 부족)
+        # Increased from 1 to 5: 액세서리 1개 나와도 다음 후보 계속 검사
+        max_pcodes_per_candidate = 5
 
         def _is_likely_accessory(product_name: str) -> bool:
             """상품명으로 명백한 액세서리(필름/케이스 등) 오탐을 완화.
 
             NOTE: Fast Path는 상세페이지 가격 검증이 1차 방어이고,
             여기서는 '브랜드/라벨' 기반으로 강한 액세서리 신호만 얕게 필터링합니다.
+            YAML 파일(resources/matching/accessories.yaml)에서 키워드 로드
             """
             name_lower = (product_name or "").lower()
-            accessory_brand_hints = (
-                # 보호필름/액세서리에서 자주 등장하는 브랜드/라벨(최소한만 유지)
-                "힐링쉴드",
-                "폰트리",
-                "슈피겐",
-                "신지모루",
-                "스코코",
-                "좀비베리어",
-            )
-            return any(h.lower() in name_lower for h in accessory_brand_hints)
+            
+            # YAML 파일에서 로드
+            keywords_data = load_accessory_keywords()
+            accessory_keywords = keywords_data.get("accessory_keywords", set())
+            
+            # 키워드 기반 필터링
+            matched_keywords = [k for k in accessory_keywords if k in name_lower]
+            has_keyword = len(matched_keywords) > 0
+            
+            # 디버그 로그
+            if has_keyword:
+                logger.info(f"[ACCESSORY_FILTER] Matched keywords: {matched_keywords[:5]} in '{product_name[:80]}'")
+            
+            return has_keyword
 
         # Note: Probing removed to save time. We'll fail fast on actual fetch if host is down.
         chosen_pcode: Optional[str] = None
@@ -157,14 +177,19 @@ class DanawaHttpFastPath:
             if not html:
                 continue
 
-            if is_no_results_html(html):
-                logger.info(f"[FAST_PATH] No results page detected for candidate {idx+1}")
-                raise FastPathNoResults(query)
-
             try:
                 if not has_search_fingerprint(html):
-                    logger.info(f"[FAST_PATH] No search fingerprint found for candidate {idx+1}")
-                    continue
+                    # Fingerprint 없음 → 정말 검색 결과가 없는지 확인
+                    # NOTE: is_no_results_html()은 오탐이 많을 수 있으므로,
+                    # fingerprint가 없을 때만 사용
+                    if is_no_results_html(html):
+                        logger.info(f"[FAST_PATH] No results page detected for candidate {idx+1}")
+                        raise FastPathNoResults(query)
+                    else:
+                        logger.info(f"[FAST_PATH] No search fingerprint found for candidate {idx+1}")
+                        continue
+            except FastPathNoResults:
+                raise
             except Exception:
                 continue
 
@@ -204,11 +229,15 @@ class DanawaHttpFastPath:
                 if not parsed:
                     continue
 
-                # 상품명 기반 액세서리 필터링 (상품명에 명백한 액세서리 키워드가 있으면 스킵)
-                if _is_likely_accessory(parsed.product_name):
+                # 상품명 기반 액세서리 필터링
+                # NOTE: parse_product_lowest_price() 내부에서 표시용 클리닝이 적용되며,
+                # 괄호 안(예: "(액정보호필름...)"")이 삭제될 수 있습니다.
+                # 그래서 원본 HTML <title>도 함께 검사합니다.
+                html_title = self._extract_html_title(product_html)
+                if _is_likely_accessory(parsed.product_name) or (html_title and _is_likely_accessory(html_title)):
                     logger.info(
                         f"[FAST_PATH] Skipping likely accessory based on product name: "
-                        f"(pcode={pcode}, name='{parsed.product_name[:50]}...')"
+                        f"(pcode={pcode}, name='{parsed.product_name[:50]}...', title='{html_title[:50]}...')"
                     )
                     continue
 

@@ -11,6 +11,7 @@ V2: Enhanced with type safety, comprehensive exception handling, and null safety
 
 from typing import Optional, Dict, Any
 from asyncio import TimeoutError as AsyncTimeoutError
+from datetime import datetime
 
 from src.core.logging import logger
 from src.core.exceptions import ProductNotFoundException
@@ -137,7 +138,9 @@ class SearchOrchestrator:
             
             # Null safety: URL과 가격이 존재하는지 확인
             product_url = cached.get("url") or cached.get("product_url")
-            price = cached.get("price")
+            price = cached.get("lowest_price") if cached.get("lowest_price") is not None else cached.get("price")
+            product_id = cached.get("product_id")
+            top_prices = cached.get("top_prices")
             
             if not product_url:
                 logger.warning(f"Cache missing product_url: {cached}")
@@ -162,6 +165,8 @@ class SearchOrchestrator:
                 price=price_int,
                 query=query,
                 elapsed_ms=self.budget_manager.elapsed() * 1000,
+                product_id=product_id,
+                top_prices=top_prices if isinstance(top_prices, list) else None,
             )
         
         except AsyncTimeoutError as e:
@@ -231,9 +236,22 @@ class SearchOrchestrator:
             metadata = getattr(result, 'metadata', {}) or {}
             product_id = metadata.get('product_id') or metadata.get('pcode')
             top_prices = metadata.get('top_prices')
+            product_name = getattr(result, 'product_name', None) or metadata.get('product_name') or query
 
-            # Cache 저장
-            await self._save_to_cache(query, product_url, price_int)
+            # Cache 저장 (full payload)
+            await self._save_to_cache(
+                query,
+                {
+                    "product_name": product_name,
+                    "product_id": product_id,
+                    "lowest_price": price_int,
+                    "price": price_int,
+                    "product_url": product_url,
+                    "source": "fastpath",
+                    "top_prices": top_prices,
+                    "updated_at": datetime.utcnow().isoformat(),
+                },
+            )
 
             return SearchResult.from_fastpath(
                 product_url=product_url,
@@ -336,7 +354,25 @@ class SearchOrchestrator:
             top_prices = metadata.get('top_prices')
 
             # Cache 저장
-            await self._save_to_cache(query, product_url, price_int)
+            # Cache 저장 (full payload)
+            metadata = getattr(result, 'metadata', {}) or {}
+            product_id = metadata.get('product_id') or metadata.get('pcode')
+            top_prices = metadata.get('top_prices')
+            product_name = getattr(result, 'product_name', None) or metadata.get('product_name') or query
+
+            await self._save_to_cache(
+                query,
+                {
+                    "product_name": product_name,
+                    "product_id": product_id,
+                    "lowest_price": price_int,
+                    "price": price_int,
+                    "product_url": product_url,
+                    "source": "slowpath",
+                    "top_prices": top_prices,
+                    "updated_at": datetime.utcnow().isoformat(),
+                },
+            )
 
             return SearchResult.from_slowpath(
                 product_url=product_url,
@@ -402,37 +438,40 @@ class SearchOrchestrator:
                 error=str(e),
             )
 
-    async def _save_to_cache(self, query: str, product_url: str, price: int) -> None:
-        """결과를 캐시에 저장
-
-        Args:
-            query: 검색어
-            product_url: 상품 URL
-            price: 가격
-
-        Raises:
-            None: 캐시 저장 실패해도 무시
-        """
+    async def _save_to_cache(self, query: str, payload: Dict[str, Any]) -> None:
+        """결과를 캐시에 저장 (full payload)."""
         try:
             # Validation
             if not query or not isinstance(query, str):
                 logger.warning(f"Invalid query for cache: {query}")
                 return
-            
+
+            if not payload or not isinstance(payload, dict):
+                logger.warning(f"Invalid payload for cache: {payload}")
+                return
+
+            product_url = payload.get("product_url")
+            price = payload.get("lowest_price") if payload.get("lowest_price") is not None else payload.get("price")
             if not product_url or not isinstance(product_url, str):
                 logger.warning(f"Invalid product_url for cache: {product_url}")
                 return
-            
-            if not isinstance(price, int) or price <= 0:
+            try:
+                price_int = int(price)
+            except Exception:
                 logger.warning(f"Invalid price for cache: {price}")
                 return
-            
-            cache_data: Dict[str, Any] = {
-                "product_url": product_url,
-                "price": price,
-            }
-            await self.cache.set(query, cache_data, ttl=21600)  # 6시간
-            logger.debug(f"Result cached: query='{query}', price={price}")
+            if price_int <= 0:
+                logger.warning(f"Invalid price for cache: {price_int}")
+                return
+
+            # 강제로 필수 키 정리
+            payload.setdefault("product_name", query)
+            payload["lowest_price"] = price_int
+            payload.setdefault("source", "unknown")
+            payload.setdefault("updated_at", datetime.utcnow().isoformat())
+
+            await self.cache.set(query, payload, ttl=21600)  # 6시간
+            logger.debug(f"Result cached: query='{query}', price={price_int}")
         
         except AsyncTimeoutError as e:
             logger.warning(f"Cache set timeout: {e}")

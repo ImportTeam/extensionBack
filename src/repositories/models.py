@@ -13,7 +13,10 @@ class SearchLog(Base):
     query_name = Column(String, nullable=False, index=True)
     origin_price = Column(Integer, nullable=True)
     found_price = Column(Integer, nullable=True)
+    product_id = Column(String, nullable=True, index=True)  # pcode 등
     status = Column(String, nullable=False, index=True)  # HIT, MISS, FAIL
+    source = Column(String, nullable=True)  # cache, fastpath, slowpath
+    elapsed_ms = Column(Float, nullable=True)  # 검색 소요 시간
     created_at = Column(TIMESTAMP, server_default=func.now(), index=True)
     
     # 복합 인덱스 (통계 쿼리 최적화)

@@ -1,7 +1,9 @@
 """Cache Adapter - Enhanced Type Safety Version"""
 
-from typing import Optional, Dict, Any, Union
+from typing import Optional, Dict, Any
 from asyncio import TimeoutError as AsyncTimeoutError
+
+from datetime import datetime
 
 from src.core.logging import logger
 from src.services.impl.cache_service import CacheService
@@ -59,10 +61,16 @@ class CacheAdapter:
             # Type conversion
             result: Dict[str, Any] = {
                 "product_url": cached.product_url,
-                "price": int(cached.lowest_price),
+                # orchestrator 호환을 위해 price/lowest_price 둘 다 제공
+                "price": int(cached.lowest_price) if cached.lowest_price else 0,
+                "lowest_price": int(cached.lowest_price) if cached.lowest_price else 0,
                 "product_name": cached.product_name,
+                "product_id": getattr(cached, "product_id", None),
                 "mall": cached.mall,
                 "free_shipping": cached.free_shipping,
+                "top_prices": cached.top_prices,
+                "source": cached.source,
+                "updated_at": cached.updated_at,
             }
             
             # Validation
@@ -109,17 +117,17 @@ class CacheAdapter:
             
             # Validation
             product_url = data.get("product_url")
-            price = data.get("price")
+            price = data.get("lowest_price") if data.get("lowest_price") is not None else data.get("price")
             product_name = data.get("product_name")
-            
+
             if not product_url or not isinstance(product_url, str):
-                logger.warning(f"Missing or invalid product_url in cache data")
+                logger.warning("Missing or invalid product_url in cache data")
                 return
-            
+
             if price is None:
-                logger.warning(f"Missing price in cache data")
+                logger.warning("Missing price in cache data")
                 return
-            
+
             try:
                 price_int = int(price)
                 if price_int <= 0:
@@ -128,18 +136,24 @@ class CacheAdapter:
             except (TypeError, ValueError) as e:
                 logger.warning(f"Price is not a valid integer: {price}, error={e}")
                 return
-            
-            # Build cache data
-            price_data: Dict[str, Union[str, int]] = {
+
+            payload: Dict[str, Any] = {
+                "product_name": product_name if isinstance(product_name, str) else query,
+                "product_id": data.get("product_id"),
+                "lowest_price": price_int,
                 "product_url": product_url,
+                "source": data.get("source") or "unknown",
+                "mall": data.get("mall"),
+                "free_shipping": data.get("free_shipping"),
+                "top_prices": data.get("top_prices"),
+                "price_trend": data.get("price_trend"),
+                "updated_at": data.get("updated_at") or datetime.utcnow().isoformat(),
+                # 호환을 위해 legacy 키도 같이 둠
                 "price": price_int,
             }
-            
-            if product_name and isinstance(product_name, str):
-                price_data["product_name"] = product_name
-            
+
             # CacheService는 동기이므로 직접 호출
-            self.cache_service.set(query, price_data)
+            self.cache_service.set(query, payload)
         
         except AsyncTimeoutError as e:
             logger.warning(f"Cache set timeout: {e}")

@@ -19,7 +19,10 @@ class SearchLogRepository:
         query_name: str,
         origin_price: Optional[int],
         found_price: Optional[int],
-        status: str
+        status: str,
+        product_id: Optional[str] = None,
+        source: Optional[str] = None,
+        elapsed_ms: Optional[float] = None,
     ) -> SearchLog:
         """검색 로그 생성"""
         try:
@@ -27,7 +30,10 @@ class SearchLogRepository:
                 query_name=query_name,
                 origin_price=origin_price,
                 found_price=found_price,
-                status=status
+                product_id=product_id,
+                status=status,
+                source=source,
+                elapsed_ms=elapsed_ms,
             )
             self.db.add(log)
             self.db.commit()
