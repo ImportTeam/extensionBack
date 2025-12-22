@@ -159,7 +159,12 @@ async def search_price(
             if option_tokens:
                 options_str = " ".join(option_tokens)
                 search_query = f"{normalized_query} {options_str}"
-                logger.debug(f"[API] Added filtered options to query: {search_query}")
+                logger.info(
+                    f"[API] Options applied: tokens={option_tokens[:8]} (total={len(option_tokens)})"
+                )
+            else:
+                if getattr(request, "options_text", None) or request.selected_options:
+                    logger.warning("[API] Options provided but all tokens were filtered out")
         except Exception as e:
             logger.warning(f"[API] Failed to apply option filters: {e}")
         

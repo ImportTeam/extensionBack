@@ -59,8 +59,9 @@ class DanawaSearchHelper:
         """계층적 폴백 검색 후보 생성 (효율적)
         
         우선순위:
-        1. 연도 + 세대(M4, Pro 등) 제거 버전 (성공률 최고) ← 가장 광범위
-        2. 연도만 제거 버전
+        1. 연도 제거 + 칩셋 유지 버전 (정확도 우선)
+        2. 연도 제거 + 칩셋 제거 버전 (광범위)
+        3. 연도만 제거 버전
         3. 정규화된 버전
         4. 브랜드 + 모델 (칩셋 포함)
         5. 모델명만
@@ -81,17 +82,22 @@ class DanawaSearchHelper:
                 if reason:
                     logger.debug(f"[SearchCandidates] Added: '{cand}' ({reason})")
 
-        # 🔴 핵심 1: 연도 + 세대 제거 (가장 광범위 검색)
-        # 예: "Apple 2025 맥북 에어 15 M4" → "Apple 맥북 에어 15"
-        no_year_no_gen = re.sub(r"\b(19|20)\d{2}\b", " ", product_name)
-        no_year_no_gen = re.sub(r"\b(?i)(M|m)\s*\d+(?:\s*pro|pro)?\b", " ", no_year_no_gen)  # M1-M9, Pro 제거
-        no_year_no_gen = re.sub(r"\s+", " ", no_year_no_gen).strip()
-        if no_year_no_gen and no_year_no_gen.lower() != product_name.lower():
-            add_candidate(no_year_no_gen, reason="연도+세대 제거 (광범위)")
+        # 🔴 핵심 1: 연도 제거 (칩셋은 유지) - 옵션/세대까지 반영 가능
+        # 예: "Apple 2025 맥북 에어 15 M4" → "Apple 맥북 에어 15 M4"
+        no_year_keep_chip = re.sub(r"\b(19|20)\d{2}\b", " ", product_name)
+        no_year_keep_chip = re.sub(r"\s+", " ", no_year_keep_chip).strip()
+        if no_year_keep_chip and no_year_keep_chip.lower() != product_name.lower():
+            add_candidate(no_year_keep_chip, reason="연도 제거(칩셋 유지)")
+
+        # 🔴 핵심 2: 연도 제거 + 칩셋 제거(광범위) - 출시 전/희소 모델 대비
+        # 예: "... M4" → "..." (단, 맥북 등은 칩셋이 중요하므로 1번을 먼저 둠)
+        no_year_drop_chip = re.sub(r"\b(?i)(M|m)\s*\d+\b", " ", no_year_keep_chip)
+        no_year_drop_chip = re.sub(r"\s+", " ", no_year_drop_chip).strip()
+        if no_year_drop_chip and no_year_drop_chip.lower() not in seen:
+            add_candidate(no_year_drop_chip, reason="연도 제거+칩셋 제거(광범위)")
         
-        # 🔴 핵심 2: 연도 제거만 (연도+세대 제거보다 덜 광범위)
-        no_year = re.sub(r"\b(19|20)\d{2}\b", " ", product_name)
-        no_year = re.sub(r"\s+", " ", no_year).strip()
+        # 연도 제거만(중복 방지용) - 유지/제거 버전에서 이미 커버되지만, 안전망으로 둠
+        no_year = no_year_keep_chip
         if no_year and no_year.lower() not in seen:
             add_candidate(no_year, reason="연도 제거")
         

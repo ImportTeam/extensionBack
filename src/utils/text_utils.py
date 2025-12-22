@@ -536,7 +536,9 @@ def build_option_query_tokens(
         if k in {"색상"}:
             v_norm = v_norm.replace(" ", "")
 
-        token = f"{k}:{v_norm}"
+        # 다나와 상품명에는 보통 '저장용량:512GB'처럼 키가 안 붙고 값만 등장
+        # → 검색 토큰은 값 중심으로 사용
+        token = v_norm
         if token.lower() in seen:
             continue
         seen.add(token.lower())

@@ -22,7 +22,7 @@ def test_build_option_query_tokens_filters_and_normalizes_color():
     tokens = build_option_query_tokens(pairs)
 
     # 색상은 공백 제거
-    assert "색상:스페이스블랙" in tokens
+    assert "스페이스블랙" in tokens
     # denylist/value regex에 의해 배송 관련은 제외
     assert not any(t.startswith("배송:") for t in tokens)
-    assert "저장용량:512GB" in tokens
+    assert "512GB" in tokens
