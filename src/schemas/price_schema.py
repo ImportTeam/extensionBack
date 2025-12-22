@@ -4,12 +4,19 @@ from pydantic import BaseModel, Field, field_validator, model_validator
 from datetime import datetime
 
 
+class SelectedOption(BaseModel):
+    """선택된 옵션 정보"""
+    name: str = Field(..., max_length=100, description="옵션명 (예: CPU, 색상, RAM)")
+    value: str = Field(..., max_length=200, description="옵션값 (예: M4 Pro 14코어)")
+
+
 class PriceSearchRequest(BaseModel):
     """최저가 검색 요청 (입력 검증 강화)"""
     product_name: str = Field(..., min_length=1, max_length=500, description="검색할 상품명")
     current_price: Optional[int] = Field(None, ge=0, le=10**9, description="현재 가격 (0~10억)")
     current_url: Optional[str] = Field(None, max_length=2048, description="현재 URL")
     product_code: Optional[str] = Field(None, max_length=50, description="다나와 상품 코드(pcode)")
+    selected_options: Optional[List[SelectedOption]] = Field(None, max_length=50, description="사용자가 선택한 옵션")
     
     @field_validator('product_name')
     @classmethod
@@ -73,6 +80,7 @@ class PriceData(BaseModel):
     free_shipping: bool | None = Field(None, description="최저가 무료배송 여부")
     top_prices: list[MallPrice] | None = Field(None, description="쇼핑몰별 최저가 Top N")
     price_trend: list[PriceTrendPoint] | None = Field(None, description="최저가 추이")
+    selected_options: list[SelectedOption] | None = Field(None, description="요청한 선택된 옵션 (echo)")
     
     # Engine Layer 메타데이터
     source: str = Field(..., description="결과 출처: cache | fastpath | slowpath")

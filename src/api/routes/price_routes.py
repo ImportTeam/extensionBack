@@ -186,10 +186,23 @@ async def search_price(
             
             # Convert top_prices to MallPrice schema if exists
             top_prices_list = None
+            top_mall = None
+            top_free_shipping = None
+            top_link = None
+            
             if top_prices_data and isinstance(top_prices_data, list):
                 from src.schemas.price_schema import MallPrice
+                # Convert MallPrice objects to dicts for sorting
+                prices_as_dicts = []
+                for item in top_prices_data:
+                    if isinstance(item, MallPrice):
+                        prices_as_dicts.append(item.model_dump())
+                    elif isinstance(item, dict):
+                        prices_as_dicts.append(item)
+                    else:
+                        continue
                 # Sort by price (ascending) and take TOP 3
-                sorted_prices = sorted(top_prices_data, key=lambda x: x.get("price", float('inf')))[:3]
+                sorted_prices = sorted(prices_as_dicts, key=lambda x: x.get("price", float('inf')))[:3]
                 top_prices_list = [
                     MallPrice(
                         rank=idx+1,  # Re-rank after sorting
@@ -201,6 +214,12 @@ async def search_price(
                     )
                     for idx, item in enumerate(sorted_prices)
                 ]
+                
+                # TOP 1 (최저가)의 정보를 최저가 판매처로 설정
+                if sorted_prices and len(sorted_prices) > 0:
+                    top_mall = sorted_prices[0].get("mall", "알 수 없음")
+                    top_free_shipping = sorted_prices[0].get("free_shipping", False)
+                    top_link = sorted_prices[0].get("link", link)
 
             return PriceSearchResponse(
                 status="success",
@@ -210,15 +229,16 @@ async def search_price(
                     is_cheaper=is_cheaper,
                     price_diff=price_diff,
                     lowest_price=lowest_price,
-                    link=link,
-                    mall="다나와",
-                    free_shipping=None,
+                    link=top_link if top_link else link,
+                    mall=top_mall,
+                    free_shipping=top_free_shipping,
                     top_prices=top_prices_list,
                     price_trend=None,
+                    selected_options=request.selected_options,
                     source=source,
                     elapsed_ms=elapsed_ms,
                 ),
-                message="최저가를 찾았습니다.",
+                message="검색 완료",
                 error_code=None,
             )
 
