@@ -84,11 +84,19 @@ async def ensure_shared_browser() -> tuple[Playwright | None, Browser, BrowserCo
         last_err: Optional[Exception] = None
         for attempt in range(1, max(1, settings.crawler_max_retries) + 1):
             try:
-                pw = await async_playwright().start()
-                browser = await pw.chromium.launch(
-                    headless=True,
-                    args=build_launch_args(),
-                    timeout=settings.crawler_timeout,
+                logger.info(f"[Playwright] Launching browser (attempt {attempt}/{settings.crawler_max_retries})...")
+                pw = await asyncio.wait_for(
+                    async_playwright().start(),
+                    timeout=20.0,  # Playwright 시작에 최대 20초
+                )
+                
+                browser = await asyncio.wait_for(
+                    pw.chromium.launch(
+                        headless=True,
+                        args=build_launch_args(),
+                        timeout=settings.crawler_timeout,
+                    ),
+                    timeout=25.0,  # 브라우저 론칭에 최대 25초
                 )
 
                 context = await browser.new_context(
@@ -104,11 +112,11 @@ async def ensure_shared_browser() -> tuple[Playwright | None, Browser, BrowserCo
                 _shared_playwright = pw
                 _shared_browser = browser
                 _shared_context = context
-                logger.info("Browser launched successfully (shared)")
+                logger.info("[Playwright] Browser launched successfully (shared)")
                 return pw, browser, context
-            except Exception as e:
+            except asyncio.TimeoutError as e:
                 last_err = e
-                logger.error(f"Failed to launch browser (attempt {attempt}): {e}")
+                logger.error(f"[Playwright] Launch timeout (attempt {attempt}/{settings.crawler_max_retries}): {type(e).__name__}")
                 try:
                     if _shared_browser is not None:
                         await _shared_browser.close()
@@ -122,9 +130,30 @@ async def ensure_shared_browser() -> tuple[Playwright | None, Browser, BrowserCo
                     pass
                 _shared_playwright = None
                 _shared_context = None
-                await asyncio.sleep(0.3 * attempt)
+                wait_time = min(2.0 * attempt, 10.0)  # 최대 10초까지 지수적 증가
+                logger.info(f"[Playwright] Waiting {wait_time:.1f}s before retry...")
+                await asyncio.sleep(wait_time)
+            except Exception as e:
+                last_err = e
+                logger.error(f"[Playwright] Failed to launch browser (attempt {attempt}/{settings.crawler_max_retries}): {type(e).__name__}: {e}")
+                try:
+                    if _shared_browser is not None:
+                        await _shared_browser.close()
+                except Exception:
+                    pass
+                _shared_browser = None
+                try:
+                    if _shared_playwright is not None:
+                        await _shared_playwright.stop()
+                except Exception:
+                    pass
+                _shared_playwright = None
+                _shared_context = None
+                wait_time = min(2.0 * attempt, 10.0)
+                logger.info(f"[Playwright] Waiting {wait_time:.1f}s before retry...")
+                await asyncio.sleep(wait_time)
 
-        raise BrowserException(f"Browser launch failed after retries: {last_err}")
+        raise BrowserException(f"[Playwright] Browser launch failed after retries: {last_err}")
 
 
 async def shutdown_shared_browser() -> None:

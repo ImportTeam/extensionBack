@@ -130,11 +130,11 @@ class DanawaHttpFastPath:
         max_pcodes_per_candidate = 5
 
         def _is_likely_accessory(product_name: str) -> bool:
-            """상품명으로 명백한 액세서리(필름/케이스 등) 오탐을 완화.
+            """상품명으로 명백한 액세서리(필름/케이스 등)만 정밀 필터링.
 
-            NOTE: Fast Path는 상세페이지 가격 검증이 1차 방어이고,
-            여기서는 '브랜드/라벨' 기반으로 강한 액세서리 신호만 얕게 필터링합니다.
-            YAML 파일(resources/matching/accessories.yaml)에서 키워드 로드
+            개선: 브랜드만 있는 제품은 필터링하지 않음.
+            대신 브랜드 + 액세서리 키워드가 함께 있는 경우만 필터링.
+            (예: "폰트리 힐링쉴드" O, "폰트리 맥북" X)
             """
             name_lower = (product_name or "").lower()
             
@@ -143,21 +143,20 @@ class DanawaHttpFastPath:
             accessory_keywords = keywords_data.get("accessory_keywords", set())
             accessory_brands = keywords_data.get("accessory_brands", set())
             
-            # 제조사/브랜드 기반 필터링 (우선순위: 높음)
-            matched_brands = [b for b in accessory_brands if b.lower() in name_lower]
-            if matched_brands:
-                logger.info(f"[ACCESSORY_FILTER] Matched brands: {matched_brands} in '{product_name[:80]}' → SKIP")
+            # 키워드 기반 필터링 (우선순위: 최고, 강한 신호)
+            matched_keywords = [k for k in accessory_keywords if k in name_lower]
+            if matched_keywords:
+                logger.info(f"[ACCESSORY_FILTER] Matched keywords: {matched_keywords[:3]} in '{product_name[:80]}' → SKIP")
                 return True
             
-            # 키워드 기반 필터링
-            matched_keywords = [k for k in accessory_keywords if k in name_lower]
-            has_keyword = len(matched_keywords) > 0
+            # 제조사/브랜드 기반 필터링 (보조 신호, 약한 신호만)
+            # 주의: 브랜드만 있으면 필터링하지 않음 (오탐 방지)
+            # "폰트리" 브랜드 있고 + 액세서리 표시까지 있을 때만 필터
+            matched_brands = [b for b in accessory_brands if b.lower() in name_lower]
+            if matched_brands:
+                logger.debug(f"[ACCESSORY_FILTER] Detected accessory brand: {matched_brands} in '{product_name[:80]}' (but no keyword, keeping for now)")
             
-            # 디버그 로그
-            if has_keyword:
-                logger.info(f"[ACCESSORY_FILTER] Matched keywords: {matched_keywords[:5]} in '{product_name[:80]}'")
-            
-            return has_keyword
+            return False  # 브랜드만으로는 필터링하지 않음
 
         # Note: Probing removed to save time. We'll fail fast on actual fetch if host is down.
         chosen_pcode: Optional[str] = None

@@ -88,6 +88,24 @@ class FastPathExecutor(SearchExecutor):
                     total_timeout_ms=int(timeout * 1000),
                 )
 
+                # Fallback: 모든 후보 실패 시 간단한 검색어로 재시도 (1회)
+                if not result and len(candidates) > 2:
+                    logger.info(f"[FastPath] First attempt failed, trying fallback search...")
+                    # 브랜드 + 모델만으로 간단한 후보 생성
+                    from src.utils.search.search_optimizer import DanawaSearchHelper
+                    helper = DanawaSearchHelper()
+                    brand, model = helper.extract_brand_and_model(normalized_query)
+                    if brand and model:
+                        fallback_candidates = [f"{brand} {model}", brand, "MacBook", "맥북", "아이패드", "iPad"]
+                        fallback_candidates = [c for c in fallback_candidates if c]
+                        result = await fastpath.search_lowest_price(
+                            query=normalized_query,
+                            candidates=fallback_candidates,
+                            total_timeout_ms=int(timeout * 500),  # 절반 시간만 사용
+                        )
+                        if result:
+                            logger.info("[FastPath] Fallback search succeeded")
+
                 if not result:
                     logger.warning(f"[FastPath] search_lowest_price returned None for: {query}")
                     raise ProductNotFoundException(f"No results from FastPath for: {query}")
