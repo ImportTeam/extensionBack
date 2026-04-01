@@ -80,12 +80,14 @@ async def get_product_lowest_price(
             product_name = product_name.strip()
 
         # 🔴 기가차드 수정: 상품명 검증 (pcode 오매핑 최종 방어)
-        from src.utils.text_utils import weighted_match_score
-        match_score = weighted_match_score(search_query, product_name)
-        if not skip_match_validation and match_score < 45.0:
+        from src.utils.text_utils import evaluate_match
+        decision = evaluate_match(search_query, product_name)
+        match_score = decision.score
+        if not skip_match_validation and not decision.accepted:
             logger.error(
                 f"Product mismatch on detail page! query='{search_query}' vs page='{product_name}' "
-                f"(score: {match_score:.1f})"
+                f"(score: {match_score:.1f}, required_missing={decision.required_missing}, "
+                f"forbidden_hits={decision.forbidden_hits}, reason={decision.reason})"
             )
             return None
         

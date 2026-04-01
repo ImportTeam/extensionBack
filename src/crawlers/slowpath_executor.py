@@ -135,7 +135,7 @@ class SlowPathExecutor(SearchExecutor):
                     product_url_base=product_url_base,
                     product_code=pcode,
                     search_query=normalized_query,
-                    skip_match_validation=bool(product_code),
+                    skip_match_validation=False,
                 )
 
                 if not price_data or not isinstance(price_data, dict):

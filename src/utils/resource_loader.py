@@ -36,12 +36,19 @@ def load_matching_variants() -> list[str | list[str]]:
     return cast(list[str | list[str]], data.get("variants", []))
 
 
-def load_accessory_keywords() -> Dict[str, set[str]]:
+def load_accessory_keywords() -> Dict[str, Any]:
     """액세서리 및 본체 힌트 키워드 로드"""
     data = load_yaml_resource("matching/accessories.yaml")
+    category_non_main_keywords = {
+        str(category): set(keywords or [])
+        for category, keywords in (data.get("category_non_main_keywords", {}) or {}).items()
+    }
     return {
         "accessory_keywords": set(data.get("accessory_keywords", [])),
-        "main_product_hints": set(data.get("main_product_hints", []))
+        "accessory_brands": set(data.get("accessory_brands", [])),
+        "main_product_hints": set(data.get("main_product_hints", [])),
+        "non_main_product_keywords": set(data.get("non_main_product_keywords", [])),
+        "category_non_main_keywords": category_non_main_keywords,
     }
 
 

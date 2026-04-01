@@ -32,13 +32,15 @@ class Settings(BaseSettings):
     # - crawler_http_request_timeout_ms: HTTP 단일 요청 타임아웃(검색 페이지 등)
     #   → 다나와는 1~2MB 페이지를 5~7초에 로드하므로 7초로 설정
     # - crawler_http_product_timeout_ms: HTTP 상품 상세 페이지 타임아웃
-    crawler_total_budget_ms: int = 12000
-    crawler_http_timeout_ms: int = 10000
-    crawler_http_request_timeout_ms: int = 7000
-    crawler_http_product_timeout_ms: int = 6000
+    crawler_total_budget_ms: int = 9000
+    crawler_http_timeout_ms: int = 8500
+    crawler_http_request_timeout_ms: int = 2500
+    crawler_http_product_timeout_ms: int = 3500
     crawler_http_impersonate: str = "chrome110"
-    crawler_http_max_clients: int = 20
+    crawler_http_max_clients: int = 30
     crawler_enable_price_trend: bool = False
+    crawler_http_max_search_candidates: int = 3
+    crawler_http_max_pcodes_per_candidate: int = 3
 
     # Playwright 동시성 제한(서버 터짐 방지)
     crawler_browser_concurrency: int = 2
@@ -47,7 +49,7 @@ class Settings(BaseSettings):
     # - playwright: 기존 Playwright 기반 SlowPath
     # - disabled: 브라우저 기반 폴백 비활성화(저메모리 환경용)
     # - drissionpage: (옵션) DrissionPage 기반 SlowPath (의존성 설치 필요)
-    crawler_slowpath_backend: str = "playwright"
+    crawler_slowpath_backend: str = "disabled"
 
     # 앱 시작 시 Playwright 브라우저를 미리 띄울지 여부
     # 기본값은 False: 요청에서 HTTP Fast Path가 실패할 때만 lazy-launch
@@ -72,13 +74,13 @@ class Settings(BaseSettings):
     # FE(브라우저) 타임아웃보다 짧게 서버에서 하드 캡을 걸어
     # 요청이 매달린 채로 클라이언트에서 타임아웃되는 상황을 줄입니다.
     # 🔴 기가차드 수정: Playwright 폴백 고려하여 20초로 상향 (기존 14초)
-    api_price_search_timeout_s: float = 20.0
+    api_price_search_timeout_s: float = 11.0
 
     # Engine Orchestrator budget
-    engine_total_budget_s: float = 12.0
-    engine_cache_timeout_s: float = 0.5
-    engine_fastpath_timeout_s: float = 8.0
-    engine_slowpath_timeout_s: float = 3.0
+    engine_total_budget_s: float = 10.0
+    engine_cache_timeout_s: float = 0.3
+    engine_fastpath_timeout_s: float = 8.5
+    engine_slowpath_timeout_s: float = 0.2
     
     # 로깅
     log_level: str = "INFO"
@@ -93,6 +95,10 @@ class Settings(BaseSettings):
             raise ValueError("crawler_min_price_threshold must be >= 0")
         if self.crawler_total_budget_ms <= 0 or self.crawler_http_timeout_ms <= 0:
             raise ValueError("crawler budgets must be positive")
+        if self.crawler_http_request_timeout_ms <= 0 or self.crawler_http_product_timeout_ms <= 0:
+            raise ValueError("crawler request/product budgets must be positive")
+        if self.crawler_http_max_search_candidates <= 0 or self.crawler_http_max_pcodes_per_candidate <= 0:
+            raise ValueError("crawler http candidate limits must be positive")
         if self.crawler_browser_concurrency <= 0:
             raise ValueError("crawler_browser_concurrency must be positive")
         if self.crawler_slowpath_backend not in {"playwright", "disabled", "drissionpage"}:

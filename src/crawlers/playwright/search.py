@@ -9,7 +9,7 @@ from urllib.parse import quote
 from playwright.async_api import Page, TimeoutError as PlaywrightTimeoutError
 
 from src.core.logging import logger
-from src.utils.text_utils import weighted_match_score
+from src.utils.text_utils import evaluate_match
 
 
 async def search_product(
@@ -89,18 +89,24 @@ async def search_product(
         for link in links_to_score:
             try:
                 link_text = (await link.inner_text()) or (await link.get_attribute('title')) or ''
-                score = weighted_match_score(used_query, link_text)
-                logger.debug(f"Candidate link text: {link_text[:100]} score={score}")
-                if score > best_score:
-                    best_score = score
+                decision = evaluate_match(used_query, link_text)
+                logger.debug(
+                    f"Candidate link text: {link_text[:100]} score={decision.score} "
+                    f"required_missing={decision.required_missing} forbidden_hits={decision.forbidden_hits} "
+                    f"reason={decision.reason}"
+                )
+                if not decision.accepted:
+                    continue
+                if decision.score > best_score:
+                    best_score = decision.score
                     best_href = await link.get_attribute('href')
             except Exception:
                 continue
 
         # 후보 점수 기준 완화: 45.0 → 30.0 (현실적 매칭)
         # 최소 1개는 보장 (best_score > 10이면 유효하다고 판단)
-        MIN_SCORE_THRESHOLD = 30.0
-        MIN_BEST_SCORE = 10.0
+        MIN_SCORE_THRESHOLD = 35.0
+        MIN_BEST_SCORE = 35.0
         
         if best_href and best_score >= MIN_SCORE_THRESHOLD:
             href = best_href

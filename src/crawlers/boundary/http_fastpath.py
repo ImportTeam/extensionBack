@@ -15,6 +15,7 @@ from src.core.config import settings
 from src.core.logging import logger
 from src.crawlers.http_client import get_shared_http_client
 from src.utils.resource_loader import load_accessory_keywords
+from src.utils.text_utils import evaluate_match
 
 from .http_fastpath_parsing import (
     is_probably_invalid_html,
@@ -81,9 +82,11 @@ class DanawaHttpFastPath:
             if not html or is_probably_invalid_html(html):
                 kw = get_blocked_keyword(html or "")
                 if kw:
-                    logger.info(f"[FAST_PATH_HTTP] Blocked or invalid HTML (len={len(html) if html else 0}, blocked_keyword={kw})")
+                    logger.info(
+                        f"[FAST_PATH_HTTP] blocked_or_invalid_html (len={len(html) if html else 0}, blocked_keyword={kw})"
+                    )
                 else:
-                    logger.info(f"[FAST_PATH_HTTP] Blocked or invalid HTML (len={len(html) if html else 0})")
+                    logger.info(f"[FAST_PATH_HTTP] blocked_or_invalid_html (len={len(html) if html else 0})")
                 return None
             logger.info(f"[FAST_PATH_HTTP] OK (len={len(html)})")
             return html
@@ -114,20 +117,16 @@ class DanawaHttpFastPath:
 
         loop = asyncio.get_running_loop()
         deadline = loop.time() + (total_timeout_ms / 1000.0)
-
-        # 검색 페이지와 상품 상세 페이지 모두를 처리해야 하므로 예산을 분리해 사용
-        # 🔴 기가차드 최종 실무 해결: 단순 고정값
-        # total_timeout_ms=12000 → search_budget_ms=9600 (80%), product=2400
-        search_budget_ms = int(max(500, total_timeout_ms * 0.8))
-        product_budget_floor_ms = 300
-        if search_budget_ms > total_timeout_ms - product_budget_floor_ms:
-            search_budget_ms = max(500, total_timeout_ms - product_budget_floor_ms)
-        search_deadline = loop.time() + (search_budget_ms / 1000.0)
-
-        # 첫 후보만 시도 (성공 시 끝, 실패 시 Playwright로 바로 넣어가기)
-        max_candidates = 1
-        # Increased from 1 to 5: 액세서리 1개 나와도 다음 후보 계속 검사
-        max_pcodes_per_candidate = 5
+        configured_search_timeout_ms = int(getattr(settings, "crawler_http_request_timeout_ms", 2500))
+        configured_product_timeout_ms = int(getattr(settings, "crawler_http_product_timeout_ms", 3500))
+        max_candidates = int(getattr(settings, "crawler_http_max_search_candidates", 3))
+        max_pcodes_per_candidate = int(getattr(settings, "crawler_http_max_pcodes_per_candidate", 3))
+        min_search_timeout_ms = 800
+        min_product_timeout_ms = 1500
+        reserved_detail_budget_ms = max(
+            min_product_timeout_ms,
+            min(total_timeout_ms // 2, configured_product_timeout_ms * max_pcodes_per_candidate),
+        )
 
         def _is_likely_accessory(product_name: str) -> bool:
             """상품명으로 명백한 액세서리(필름/케이스 등)만 정밀 필터링.
@@ -140,7 +139,7 @@ class DanawaHttpFastPath:
             
             # YAML 파일에서 로드
             keywords_data = load_accessory_keywords()
-            accessory_keywords = keywords_data.get("accessory_keywords", set())
+            accessory_keywords = keywords_data.get("non_main_product_keywords", set()) or keywords_data.get("accessory_keywords", set())
             accessory_brands = keywords_data.get("accessory_brands", set())
             
             # 키워드 기반 필터링 (우선순위: 최고, 강한 신호)
@@ -162,9 +161,7 @@ class DanawaHttpFastPath:
         chosen_pcode: Optional[str] = None
         chosen_result: Optional[dict] = None
         seen_pcodes: set[str] = set()  # 🔴 기가차드 수정: 중복 분석 방지
-        # 개별 요청 타임아웃: 고정값 8s (다나와 페이지 완전 로드에 필요)
-        per_try_ms = 8000
-        
+
         for idx, cand in enumerate(candidates[:max_candidates]):
             # IMPORTANT:
             # - 각 candidate로 검색 페이지를 fetch 했다면,
@@ -173,13 +170,18 @@ class DanawaHttpFastPath:
             #   점수 필터(40/45점)에 의해 pcode가 모두 탈락할 수 있습니다.
             scoring_query = cand
 
-            remaining_search_ms = int(max(0.0, (search_deadline - loop.time()) * 1000.0))
-            if remaining_search_ms <= 0:
-                logger.info("[FAST_PATH] Search budget exhausted before search fetch")
+            remaining_total_ms = int(max(0.0, (deadline - loop.time()) * 1000.0))
+            search_budget_ms = remaining_total_ms - reserved_detail_budget_ms
+            if search_budget_ms < min_search_timeout_ms:
+                logger.info(
+                    "[FAST_PATH] budget_exhausted_before_detail: "
+                    f"remaining_total_ms={remaining_total_ms}, reserved_detail_budget_ms={reserved_detail_budget_ms}"
+                )
                 break
 
+            search_timeout_ms = int(min(configured_search_timeout_ms, search_budget_ms))
             search_url = f"{self.search_url}?query={quote(cand)}&originalQuery={quote(cand)}"
-            html = await self._fetch_html(search_url, timeout_ms=per_try_ms)
+            html = await self._fetch_html(search_url, timeout_ms=search_timeout_ms)
             if not html:
                 continue
 
@@ -210,14 +212,14 @@ class DanawaHttpFastPath:
                 seen_pcodes.add(pcode)
 
                 remaining_total_ms = int(max(0.0, (deadline - loop.time()) * 1000.0))
-                if remaining_total_ms <= 0:
-                    logger.info("[FAST_PATH] Total budget exhausted before product fetch")
+                if remaining_total_ms < min_product_timeout_ms:
+                    logger.info(
+                        "[FAST_PATH] budget_exhausted_before_detail: "
+                        f"remaining_total_ms={remaining_total_ms}, min_product_timeout_ms={min_product_timeout_ms}"
+                    )
                     break
 
-                # Product page fetch: 상품 상세는 더 느릴 수 있어 별도 타임아웃을 둡니다.
-                # Increased minimum from 300ms to 3000ms (3s) for realistic network conditions
-                configured_product_timeout_ms = int(getattr(settings, "crawler_http_product_timeout_ms", 6000))
-                product_timeout_ms = int(max(3000, min(configured_product_timeout_ms, remaining_total_ms)))
+                product_timeout_ms = int(min(configured_product_timeout_ms, remaining_total_ms))
 
                 product_url = f"{self.product_url}?pcode={pcode}&keyword={quote(scoring_query)}"
                 product_html = await self._fetch_html(product_url, timeout_ms=product_timeout_ms)
@@ -244,6 +246,17 @@ class DanawaHttpFastPath:
                     logger.info(
                         f"[FAST_PATH] Skipping likely accessory based on product name: "
                         f"(pcode={pcode}, name='{parsed.product_name[:50]}...', title='{html_title[:50]}...')"
+                    )
+                    continue
+
+                title_for_match = html_title or parsed.product_name
+                decision = evaluate_match(scoring_query, title_for_match)
+                if not decision.accepted:
+                    logger.info(
+                        "[FAST_PATH] candidate_rejected after detail validation: "
+                        f"query='{scoring_query[:80]}', title='{title_for_match[:80]}', final_score={decision.score:.1f}, "
+                        f"required_missing={decision.required_missing}, forbidden_hits={decision.forbidden_hits}, "
+                        f"reason={decision.reason}"
                     )
                     continue
 
@@ -274,7 +287,7 @@ class DanawaHttpFastPath:
                 break  # 성공하면 더 이상 시도 안 함
 
         if not chosen_pcode or not chosen_result:
-            logger.info("[FAST_PATH] No pcode found from any candidate")
+            logger.info("[FAST_PATH] no_results: no pcode found from any candidate")
             return None
 
         return chosen_result
@@ -307,6 +320,7 @@ class DanawaHttpFastPath:
             product_url=product_url,
         )
         if not parsed:
+            logger.info(f"[FAST_PATH] candidate_rejected for direct pcode={product_code}")
             return None
 
         from datetime import datetime

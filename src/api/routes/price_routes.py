@@ -70,6 +70,7 @@ def get_orchestrator(
 
         if settings.crawler_slowpath_backend == "disabled":
             slowpath = DisabledSlowPathExecutor()
+            logger.info("[API] HTTP-only mode enabled: browser fallback disabled")
         elif settings.crawler_slowpath_backend == "playwright":
             slowpath = SlowPathExecutor()
         else:

@@ -24,7 +24,7 @@ class DisabledSlowPathExecutor(SearchExecutor):
         product_code: str | None = None,
     ) -> CrawlResult:
         logger.info(
-            f"[SlowPath:disabled] Skipping browser fallback: query='{query}', timeout={timeout:.2f}s, product_code={product_code}"
+            f"[SlowPath:disabled] HTTP-only mode, no browser fallback: query='{query}', timeout={timeout:.2f}s, product_code={product_code}"
         )
         raise ProductNotFoundException(
             query=query,

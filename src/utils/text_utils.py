@@ -14,10 +14,12 @@
 from __future__ import annotations
 
 import re
+from dataclasses import dataclass
 from typing import Optional
 
 from src.core.logging import logger
 from src.utils.resource_loader import (
+    load_search_categories,
     load_matching_variants,
     load_accessory_keywords,
     load_matching_signals,
@@ -151,6 +153,20 @@ def tokenize_keywords(text: str) -> set[str]:
 
 # ==================== Matching: 유사도 & 매칭 ====================
 
+
+@dataclass
+class MatchDecision:
+    """상품명 매칭 판정 결과."""
+
+    score: float
+    accepted: bool
+    required_hits: list[str]
+    required_missing: list[str]
+    forbidden_hits: list[str]
+    reason: str
+    query_signals: dict
+    candidate_signals: dict
+
 def calculate_similarity(text1: str, text2: str) -> float:
     """두 텍스트의 유사도를 계산 (폴백).
 
@@ -251,24 +267,108 @@ def is_accessory_trap(query: str, candidate: str) -> bool:
     return True
 
 
-def weighted_match_score(query: str, candidate: str) -> float:
-    """가중치 매칭 스코어 (신호 기반 보정)"""
+def _normalize_for_matching(text: str) -> str:
+    normalized = split_kr_en_boundary(clean_product_name(text or ""))
+    normalized = normalized.lower()
+    normalized = normalized.replace("애플", "apple")
+    normalized = re.sub(r"\s+", " ", normalized).strip()
+    return normalized
+
+
+def _detect_variants(text: str) -> set[str]:
+    lowered = _normalize_for_matching(text)
+    detected: set[str] = set()
+    for group in load_matching_variants():
+        if isinstance(group, list):
+            standard = str(group[0]).lower()
+            for synonym in group:
+                if str(synonym).lower() in lowered:
+                    detected.add(standard)
+        else:
+            token = str(group).lower()
+            if token in lowered:
+                detected.add(token)
+    return detected
+
+
+def _detect_interfaces(text: str) -> set[str]:
+    lowered = _normalize_for_matching(text)
+    interfaces: set[str] = set()
+    if "usb-c" in lowered or "usbc" in lowered or "c타입" in lowered or "type-c" in lowered:
+        interfaces.add("usb-c")
+    if "lightning" in lowered or "라이트닝" in lowered:
+        interfaces.add("lightning")
+    return interfaces
+
+
+def _detect_categories(text: str) -> set[str]:
+    lowered = _normalize_for_matching(text)
+    categories = load_search_categories()
+    hits: set[str] = set()
+    for category, info in categories.items():
+        pattern = str(info.get("pattern", "")).strip()
+        if pattern and re.search(pattern, lowered, re.IGNORECASE):
+            hits.add(category)
+            continue
+        for keyword in info.get("keywords", []):
+            if str(keyword).lower() in lowered:
+                hits.add(category)
+                break
+    return hits
+
+
+def _detect_generations(normalized_text: str, named_numbers: dict[str, set[str]]) -> set[str]:
+    generations = {f"{num}세대" for num in re.findall(r"\b(\d{1,2})\s*세대\b", normalized_text)}
+    for values in named_numbers.values():
+        for value in values:
+            generations.add(value)
+    return generations
+
+
+def _resolve_non_main_hits(query: str, candidate: str) -> list[str]:
+    resources = load_accessory_keywords()
+    query_normalized = _normalize_for_matching(query)
+    candidate_normalized = _normalize_for_matching(candidate)
+    query_categories = _detect_categories(query)
+
+    forbidden_pool = set(resources.get("non_main_product_keywords", set()))
+    for category in query_categories:
+        forbidden_pool.update(resources.get("category_non_main_keywords", {}).get(category, set()))
+
+    if any(_normalize_for_matching(keyword) in query_normalized for keyword in forbidden_pool):
+        return []
+
+    hits = []
+    for keyword in forbidden_pool:
+        normalized_keyword = _normalize_for_matching(keyword)
+        if not normalized_keyword:
+            continue
+        if normalized_keyword in candidate_normalized and normalized_keyword not in query_normalized:
+            hits.append(keyword)
+
+    unique_hits: list[str] = []
+    seen: set[str] = set()
+    for hit in hits:
+        key = hit.lower()
+        if key not in seen:
+            seen.add(key)
+            unique_hits.append(hit)
+    return unique_hits
+
+
+def _base_weighted_match_score(query: str, candidate: str) -> float:
+    """기존 가중치 점수 계산."""
     if not query or not candidate:
         return 0.0
 
     if is_accessory_trap(query, candidate):
         return 0.0
 
-    # 띄어쓰기/붙임 차이를 견디기 위해 공백 제거 버전도 같이 평가
     def _nospace(s: str) -> str:
         s = (s or "").lower()
-        # 년형 제거 (예: "2025년형" → "2025")
         s = s.replace("년형", "").replace("년식", "")
-        # 애플/Apple 통일
         s = s.replace("애플", "apple")
-        # 공백 제거
         s = re.sub(r"\s+", "", s)
-        # 특수문자 제거
         s = re.sub(r"[^0-9a-zA-Z가-힣]", "", s)
         return s
 
@@ -279,71 +379,38 @@ def weighted_match_score(query: str, candidate: str) -> float:
 
     q = extract_product_signals(query)
     c = extract_product_signals(candidate)
-
     score = base
 
-    # [핵심] 제품군(Pro/Air/Max/Mini/Ultra/FE) 불일치 - 강한 필터
-    variants_data = load_matching_variants()
-    q_lower = query.lower()
-    c_lower = candidate.lower()
-    
-    q_variants = set()
-    c_variants = set()
-    
-    for v_group in variants_data:
-        # v_group은 [standard, synonym1, synonym2, ...] 형태
-        if isinstance(v_group, list):
-            standard = v_group[0]
-            for synonym in v_group:
-                if synonym in q_lower:
-                    q_variants.add(standard)
-                if synonym in c_lower:
-                    c_variants.add(standard)
-        else:
-            # 하위 호환성 (단일 문자열인 경우)
-            if v_group in q_lower:
-                q_variants.add(v_group)
-            if v_group in c_lower:
-                c_variants.add(v_group)
-
-    if q_variants or c_variants:
-        # 둘 중 하나라도 variant가 있는데 서로 다르면 (Pro vs Air, Pro vs None 등)
-        if q_variants != c_variants:
-            logger.debug(f"Variant mismatch: query={q_variants} vs candidate={c_variants}")
+    if q["variants"] or c["variants"]:
+        if q["variants"] != c["variants"]:
+            logger.debug(f"Variant mismatch: query={q['variants']} vs candidate={c['variants']}")
             score -= 45.0
 
-    # [핵심] CPU/칩셋 정보 추출 및 비교 (M5 vs M3 등)
     m_chip_pattern = r"(?i)M\s*(\d+)"
     q_chips = set(re.findall(m_chip_pattern, query))
     c_chips = set(re.findall(m_chip_pattern, candidate))
-
     if q_chips and c_chips and q_chips != c_chips:
         logger.debug(f"Chip mismatch (disqualify): query={q_chips} vs candidate={c_chips}")
         return 0.0
     if q_chips and c_chips and q_chips == c_chips:
         score += 5.0
 
-    # [핵심] 화면 크기(11/13/15 등) 불일치 - 하드 제외
     screen_size_pattern = r"\b(10|11|12|13|14|15|16|17)(?:\s*인치|\s*inch|\s*\")?"
     q_screens = set(re.findall(screen_size_pattern, query, re.IGNORECASE))
     c_screens = set(re.findall(screen_size_pattern, candidate, re.IGNORECASE))
-
     if q_screens and c_screens and q_screens != c_screens:
         logger.debug(f"Screen size mismatch (disqualify): query={q_screens} vs candidate={c_screens}")
         return 0.0
     if q_screens and c_screens and q_screens == c_screens:
         score += 3.0
 
-    # 용량 불일치 (256GB vs 512GB)
     for unit_q in q["unit_numbers"]:
         if unit_q not in c["unit_numbers"]:
             score -= 10.0
 
-    # 연도 불일치
     if q["years"] and c["years"] and q["years"] != c["years"]:
         score -= 15.0
 
-    # 모델 코드 일치
     if q["model_codes"] and c["model_codes"]:
         if q["model_codes"].intersection(c["model_codes"]):
             score += 20.0
@@ -351,6 +418,102 @@ def weighted_match_score(query: str, candidate: str) -> float:
             score -= 20.0
 
     return max(0.0, score)
+
+
+def evaluate_match(query: str, candidate: str, *, min_score: float = 35.0) -> MatchDecision:
+    """필수 신호/금지 신호를 반영한 매칭 판정."""
+    if not query or not candidate:
+        return MatchDecision(
+            score=0.0,
+            accepted=False,
+            required_hits=[],
+            required_missing=["invalid_input"],
+            forbidden_hits=[],
+            reason="invalid_input",
+            query_signals={},
+            candidate_signals={},
+        )
+
+    q_signals = extract_product_signals(query)
+    c_signals = extract_product_signals(candidate)
+    required_hits: list[str] = []
+    required_missing: list[str] = []
+
+    forbidden_hits = _resolve_non_main_hits(query, candidate)
+    if forbidden_hits:
+        return MatchDecision(
+            score=0.0,
+            accepted=False,
+            required_hits=required_hits,
+            required_missing=required_missing,
+            forbidden_hits=forbidden_hits,
+            reason="forbidden_non_main_product",
+            query_signals=q_signals,
+            candidate_signals=c_signals,
+        )
+
+    if q_signals["variants"]:
+        if q_signals["variants"].issubset(c_signals["variants"]):
+            required_hits.extend(sorted(f"variant:{value}" for value in q_signals["variants"]))
+        else:
+            required_missing.extend(sorted(f"variant:{value}" for value in q_signals["variants"] - c_signals["variants"]))
+
+    if q_signals["interfaces"]:
+        if q_signals["interfaces"].issubset(c_signals["interfaces"]):
+            required_hits.extend(sorted(f"interface:{value}" for value in q_signals["interfaces"]))
+        else:
+            required_missing.extend(sorted(f"interface:{value}" for value in q_signals["interfaces"] - c_signals["interfaces"]))
+
+    if q_signals["years"] and c_signals["years"]:
+        if q_signals["years"].issubset(c_signals["years"]):
+            required_hits.extend(sorted(f"year:{value}" for value in q_signals["years"]))
+        else:
+            required_missing.extend(sorted(f"year:{value}" for value in q_signals["years"] - c_signals["years"]))
+
+    for key, values in q_signals["named_numbers"].items():
+        candidate_values = c_signals["named_numbers"].get(key, set())
+        if values and values.issubset(candidate_values):
+            required_hits.extend(sorted(f"named:{key}:{value}" for value in values))
+        elif values:
+            required_missing.extend(sorted(f"named:{key}:{value}" for value in values - candidate_values))
+
+    generation_required_categories = {"earphone", "phone", "tablet"}
+    if q_signals["generations"] and q_signals["categories"].intersection(generation_required_categories):
+        if q_signals["generations"].intersection(c_signals["generations"]):
+            required_hits.extend(sorted(f"generation:{value}" for value in q_signals["generations"].intersection(c_signals["generations"])))
+        else:
+            required_missing.extend(sorted(f"generation:{value}" for value in q_signals["generations"]))
+
+    if required_missing:
+        return MatchDecision(
+            score=0.0,
+            accepted=False,
+            required_hits=required_hits,
+            required_missing=required_missing,
+            forbidden_hits=[],
+            reason="missing_required_signals",
+            query_signals=q_signals,
+            candidate_signals=c_signals,
+        )
+
+    score = _base_weighted_match_score(query, candidate)
+    accepted = score >= min_score
+    reason = "accepted" if accepted else "low_score"
+    return MatchDecision(
+        score=score,
+        accepted=accepted,
+        required_hits=required_hits,
+        required_missing=[],
+        forbidden_hits=[],
+        reason=reason,
+        query_signals=q_signals,
+        candidate_signals=c_signals,
+    )
+
+
+def weighted_match_score(query: str, candidate: str) -> float:
+    """가중치 매칭 스코어 (신호 기반 보정)"""
+    return evaluate_match(query, candidate).score
 
 
 # ==================== Signals: 신호 추출 ====================
@@ -394,6 +557,10 @@ def extract_product_signals(text: str) -> dict:
             "unit_numbers": set(),
             "big_numbers": set(),
             "named_numbers": {},
+            "variants": set(),
+            "interfaces": set(),
+            "categories": set(),
+            "generations": set(),
         }
 
     normalized = split_kr_en_boundary(clean_product_name(text))
@@ -420,13 +587,16 @@ def extract_product_signals(text: str) -> dict:
     named_numbers: dict[str, set[str]] = {}
     signals = load_matching_signals()
     stop_prefix = signals["named_number_stop_prefixes"]
+    generic_named_number_prefixes = {
+        "인텔", "intel", "코어", "core", "지포스", "geforce", "rtx", "gtx", "라이젠", "ryzen"
+    }
     
     for name, num in re.findall(
         r"\b([A-Za-z가-힣]{2,}(?:\s+[A-Za-z가-힣]{2,})?)\s*(\d{1,2})\b",
         normalized,
     ):
         key = re.sub(r"\s+", " ", name).strip().lower()
-        if not key or key in stop_prefix:
+        if not key or key in stop_prefix or key in generic_named_number_prefixes:
             continue
         named_numbers.setdefault(key, set()).add(num)
 
@@ -436,6 +606,10 @@ def extract_product_signals(text: str) -> dict:
         "unit_numbers": unit_numbers,
         "big_numbers": big_numbers,
         "named_numbers": named_numbers,
+        "variants": _detect_variants(normalized),
+        "interfaces": _detect_interfaces(normalized),
+        "categories": _detect_categories(normalized),
+        "generations": _detect_generations(normalized, named_numbers),
     }
 
 
@@ -600,6 +774,8 @@ __all__ = [
     "calculate_similarity",
     "fuzzy_score",
     "is_accessory_trap",
+    "evaluate_match",
+    "MatchDecision",
     "weighted_match_score",
     # Signals
     "extract_model_codes",

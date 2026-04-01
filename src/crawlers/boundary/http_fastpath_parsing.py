@@ -13,7 +13,7 @@ from selectolax.parser import HTMLParser
 
 from src.core.config import settings
 from src.core.logging import logger
-from src.utils.text_utils import extract_price_from_text, weighted_match_score
+from src.utils.text_utils import extract_price_from_text, evaluate_match
 from src.utils.url import normalize_href
 
 
@@ -157,13 +157,16 @@ def parse_search_pcandidates(html: str, query: str, max_candidates: int = 12) ->
         if not pcode:
             continue
         text = (node.text() or "").strip()
-        
-        score = weighted_match_score(query, text)
-        # 🔴 기가차드 최종 수정: FastPath에서 점수 필터 제거
-        # 이유: selector 구조 변화로 인한 오탐을 막으려 했지만,
-        # 역으로 정확한 pcode 후보까지 버리는 악순환 발생
-        # → pcode가 존재하면 일단 반환, 최종 검증은 가격 파싱으로
-        scored.append((score, pcode))
+        decision = evaluate_match(query, text)
+        logger.debug(
+            "[FAST_PATH] Candidate decision: "
+            f"query='{query[:80]}', candidate='{text[:80]}', final_score={decision.score:.1f}, "
+            f"required_missing={decision.required_missing}, forbidden_hits={decision.forbidden_hits}, "
+            f"reason={decision.reason}"
+        )
+        if not decision.accepted:
+            continue
+        scored.append((decision.score, pcode))
 
     scored.sort(key=lambda t: t[0], reverse=True)
 
@@ -239,16 +242,18 @@ def parse_product_lowest_price(html: str, fallback_name: str, product_url: str) 
 
     title_node = parser.css_first(".prod_tit")
     raw_title = (title_node.text().strip() if title_node and title_node.text() else fallback_name)
-    
-    # 🔴 기가차드 최종 실무 해결: FastPath에서 상품명 검증 제거
-    # 이유:
-    # - 이미 다나와 HTML을 정확히 파싱했으므로, pcode가 존재하면 그 자체가 검증 완료
-    # - 한국어 띄어쓰기/붙임/UI 노이즈로 인한 점수 오판이 더 큰 피해
-    # - 최종 검증은 가격 파싱 성공 여부 + 금액 합리성으로 충분
-    # - 따라서 여기서는 pcode를 얻었으면 일단 반환하고, Playwright와 병렬로 진행
 
     # DB/FE 표시용으로만 클리닝 수행
     product_name = clean_display_text(raw_title)
+    title_decision = evaluate_match(fallback_name, raw_title)
+    if not title_decision.accepted:
+        logger.info(
+            "[FAST_PATH] Rejecting product detail title: "
+            f"query='{fallback_name[:80]}', title='{raw_title[:80]}', final_score={title_decision.score:.1f}, "
+            f"required_missing={title_decision.required_missing}, forbidden_hits={title_decision.forbidden_hits}, "
+            f"reason={title_decision.reason}"
+        )
+        return None
 
     items = parser.css("#lowPriceCompanyArea .box__mall-price .list__mall-price .list-item")
     if not items:

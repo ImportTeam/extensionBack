@@ -2,7 +2,7 @@
 import re
 from typing import Optional
 from src.core.logging import logger
-from src.utils.resource_loader import load_search_substitutions, load_search_categories
+from src.utils.resource_loader import load_search_substitutions, load_search_categories, load_accessory_keywords
 
 
 class DanawaSearchHelper:
@@ -135,8 +135,14 @@ class DanawaSearchHelper:
                 for en in en_terms:
                     add_candidate(en, reason=f"대체검색어 ({kr_term}→{en})")
         
-        logger.info(f"[SearchCandidates] Generated {len(candidates)} candidates for '{product_name}': {candidates}")
-        return candidates if candidates else [clean_product_name(product_name)]
+        filtered_candidates = self._filter_candidates_for_category(
+            original_query=product_name,
+            candidates=candidates,
+        )
+        logger.info(
+            f"[SearchCandidates] Generated {len(filtered_candidates)} candidates for '{product_name}': {filtered_candidates}"
+        )
+        return filtered_candidates if filtered_candidates else [clean_product_name(product_name)]
     
     def get_smart_search_query(self, product_name: str) -> str:
         """가장 효율적인 검색어 반환 (우선순위: 정규화 → 브랜드+모델 → 모델)"""
@@ -158,3 +164,26 @@ class DanawaSearchHelper:
         
         # 최후의 수단: 원본
         return product_name
+
+    def _filter_candidates_for_category(self, original_query: str, candidates: list[str]) -> list[str]:
+        """카테고리별 금지 토큰이 섞인 후보를 제거."""
+        category = self.detect_category(original_query or "")
+        if not category or not candidates:
+            return candidates
+
+        accessory_data = load_accessory_keywords()
+        banned_tokens = set(accessory_data.get("category_non_main_keywords", {}).get(category, set()))
+        if not banned_tokens:
+            return candidates
+
+        original_lower = (original_query or "").lower()
+        allow_banned = any(token.lower() in original_lower for token in banned_tokens)
+        if allow_banned:
+            return candidates
+
+        filtered = [
+            candidate
+            for candidate in candidates
+            if not any(token.lower() in candidate.lower() for token in banned_tokens)
+        ]
+        return filtered or candidates
