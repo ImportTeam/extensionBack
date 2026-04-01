@@ -100,7 +100,6 @@ async def search_price(
         5. 백그라운드로 로그 저장
     """
     from src.core.security import SecurityValidator
-    from src.utils.edge_cases import EdgeCaseHandler
     
     try:
         # Security validation
@@ -171,7 +170,7 @@ async def search_price(
         # Engine Layer로 위임 (타임아웃 설정)
         timeout_s = settings.api_price_search_timeout_s
         result = await asyncio.wait_for(
-            orchestrator.search(search_query),
+            orchestrator.search(search_query, product_code=product_code),
             timeout=timeout_s,
         )
 
@@ -239,12 +238,14 @@ async def search_price(
             source = result.source if result.source is not None else "unknown"
             elapsed_ms = result.elapsed_ms if result.elapsed_ms is not None else 0.0
             product_id = result.product_id if result.product_id is not None else None
+            resolved_product_name = result.product_name if result.product_name else request.product_name
             top_prices_data = result.top_prices if result.top_prices is not None else None
+            price_trend_data = result.price_trend if result.price_trend is not None else None
             
             # Convert top_prices to MallPrice schema if exists
             top_prices_list = None
-            top_mall = None
-            top_free_shipping = None
+            top_mall = result.mall if result.mall is not None else None
+            top_free_shipping = result.free_shipping if result.free_shipping is not None else None
             top_link = None
             
             if top_prices_data and isinstance(top_prices_data, list):
@@ -281,7 +282,7 @@ async def search_price(
             return PriceSearchResponse(
                 status="success",
                 data=PriceData(
-                    product_name=request.product_name,
+                    product_name=resolved_product_name,
                     product_id=product_id,
                     is_cheaper=is_cheaper,
                     price_diff=price_diff,
@@ -290,7 +291,7 @@ async def search_price(
                     mall=top_mall,
                     free_shipping=top_free_shipping,
                     top_prices=top_prices_list,
-                    price_trend=None,
+                    price_trend=price_trend_data,
                     selected_options=request.selected_options,
                     source=source,
                     elapsed_ms=elapsed_ms,

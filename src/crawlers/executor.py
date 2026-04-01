@@ -20,7 +20,12 @@ class SearchExecutor(Protocol):
                 ...
     """
 
-    async def execute(self, query: str, timeout: float) -> CrawlResult:
+    async def execute(
+        self,
+        query: str,
+        timeout: float,
+        product_code: str | None = None,
+    ) -> CrawlResult:
         """검색 실행
 
         Args:

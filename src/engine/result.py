@@ -53,12 +53,15 @@ class SearchResult:
     
     # 상품 식별자 (pcode 등)
     product_id: Optional[str] = None  # 다나와 pcode or unique ID
+    product_name: Optional[str] = None
+    mall: Optional[str] = None
+    free_shipping: Optional[bool] = None
     
     # TOP 3 가격 리스트
     top_prices: Optional[list[dict]] = None  # [{"rank": 1, "mall": "...", "price": 123, "link": "..."}]
     
     # 가격 추세 데이터
-    price_trend: Optional[dict] = None  # {"product_id": "pcode", "min": 123, "max": 456, "trend": [...]}
+    price_trend: Optional[list[dict]] = None  # [{"label": "...", "price": 123}]
 
     # 디버깅 정보
     error_message: Optional[str] = None
@@ -87,8 +90,10 @@ class SearchResult:
     @classmethod
     def from_cache(
         cls, product_url: str, price: int, query: str, elapsed_ms: float,
-        product_id: Optional[str] = None, top_prices: Optional[list[dict]] = None,
-        price_trend: Optional[dict] = None
+        product_id: Optional[str] = None, product_name: Optional[str] = None,
+        mall: Optional[str] = None, free_shipping: Optional[bool] = None,
+        top_prices: Optional[list[dict]] = None,
+        price_trend: Optional[list[dict]] = None
     ) -> "SearchResult":
         """캐시에서 반환된 결과 생성
 
@@ -112,6 +117,9 @@ class SearchResult:
             source="cache",
             elapsed_ms=elapsed_ms,
             product_id=product_id,
+            product_name=product_name,
+            mall=mall,
+            free_shipping=free_shipping,
             top_prices=top_prices,
             price_trend=price_trend,
         )
@@ -119,8 +127,10 @@ class SearchResult:
     @classmethod
     def from_fastpath(
         cls, product_url: str, price: int, query: str, elapsed_ms: float,
-        product_id: Optional[str] = None, top_prices: Optional[list[dict]] = None,
-        price_trend: Optional[dict] = None
+        product_id: Optional[str] = None, product_name: Optional[str] = None,
+        mall: Optional[str] = None, free_shipping: Optional[bool] = None,
+        top_prices: Optional[list[dict]] = None,
+        price_trend: Optional[list[dict]] = None
     ) -> "SearchResult":
         """FastPath에서 반환된 결과 생성
 
@@ -144,6 +154,9 @@ class SearchResult:
             source="fastpath",
             elapsed_ms=elapsed_ms,
             product_id=product_id,
+            product_name=product_name,
+            mall=mall,
+            free_shipping=free_shipping,
             top_prices=top_prices,
             price_trend=price_trend,
         )
@@ -151,8 +164,10 @@ class SearchResult:
     @classmethod
     def from_slowpath(
         cls, product_url: str, price: int, query: str, elapsed_ms: float,
-        product_id: Optional[str] = None, top_prices: Optional[list[dict]] = None,
-        price_trend: Optional[dict] = None
+        product_id: Optional[str] = None, product_name: Optional[str] = None,
+        mall: Optional[str] = None, free_shipping: Optional[bool] = None,
+        top_prices: Optional[list[dict]] = None,
+        price_trend: Optional[list[dict]] = None
     ) -> "SearchResult":
         """SlowPath에서 반환된 결과 생성
 
@@ -176,6 +191,9 @@ class SearchResult:
             source="slowpath",
             elapsed_ms=elapsed_ms,
             product_id=product_id,
+            product_name=product_name,
+            mall=mall,
+            free_shipping=free_shipping,
             top_prices=top_prices,
             price_trend=price_trend,
         )

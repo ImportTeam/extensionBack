@@ -61,7 +61,7 @@ class SearchOrchestrator:
         self.budget_manager = BudgetManager(budget_config)
         self.strategy = ExecutionStrategy()
 
-    async def search(self, query: str) -> SearchResult:
+    async def search(self, query: str, product_code: str | None = None) -> SearchResult:
         """통합 검색 실행
 
         Cache → FastPath → SlowPath 순서로 실행하며,
@@ -90,13 +90,13 @@ class SearchOrchestrator:
                 return result
 
             # 2. FastPath 시도
-            result = await self._try_fastpath(query)
+            result = await self._try_fastpath(query, product_code=product_code)
             if result:
                 logger.info(f"Search completed from fastpath: query='{query}'")
                 return result
 
             # 3. SlowPath Fallback
-            result = await self._try_slowpath(query)
+            result = await self._try_slowpath(query, product_code=product_code)
             if result:
                 logger.info(f"Search completed from slowpath: query='{query}'")
                 return result
@@ -140,7 +140,11 @@ class SearchOrchestrator:
             product_url = cached.get("url") or cached.get("product_url")
             price = cached.get("lowest_price") if cached.get("lowest_price") is not None else cached.get("price")
             product_id = cached.get("product_id")
+            product_name = cached.get("product_name")
+            mall = cached.get("mall")
+            free_shipping = cached.get("free_shipping")
             top_prices = cached.get("top_prices")
+            price_trend = cached.get("price_trend")
             
             if not product_url:
                 logger.warning(f"Cache missing product_url: {cached}")
@@ -166,7 +170,11 @@ class SearchOrchestrator:
                 query=query,
                 elapsed_ms=self.budget_manager.elapsed() * 1000,
                 product_id=product_id,
+                product_name=product_name if isinstance(product_name, str) else None,
+                mall=mall if isinstance(mall, str) else None,
+                free_shipping=free_shipping if isinstance(free_shipping, bool) else None,
                 top_prices=top_prices if isinstance(top_prices, list) else None,
+                price_trend=price_trend if isinstance(price_trend, list) else None,
             )
         
         except AsyncTimeoutError as e:
@@ -176,7 +184,7 @@ class SearchOrchestrator:
             logger.warning(f"Cache lookup failed: {type(e).__name__}: {e}")
             return None
 
-    async def _try_fastpath(self, query: str) -> Optional[SearchResult]:
+    async def _try_fastpath(self, query: str, product_code: str | None = None) -> Optional[SearchResult]:
         """FastPath 실행 시도
 
         Args:
@@ -195,7 +203,7 @@ class SearchOrchestrator:
             timeout = self.budget_manager.get_timeout_for("fastpath")
             logger.debug(f"FastPath executing: query='{query}', timeout={timeout:.2f}s")
 
-            result = await self.fastpath.execute(query, timeout=timeout)
+            result = await self.fastpath.execute(query, timeout=timeout, product_code=product_code)
 
             # Result validation
             if not result:
@@ -235,8 +243,11 @@ class SearchOrchestrator:
             # Extract metadata (product_id, top_prices)
             metadata = getattr(result, 'metadata', {}) or {}
             product_id = metadata.get('product_id') or metadata.get('pcode')
-            top_prices = metadata.get('top_prices')
             product_name = getattr(result, 'product_name', None) or metadata.get('product_name') or query
+            mall = metadata.get('mall')
+            free_shipping = metadata.get('free_shipping')
+            top_prices = metadata.get('top_prices')
+            price_trend = metadata.get('price_trend')
 
             # Cache 저장 (full payload)
             await self._save_to_cache(
@@ -248,7 +259,10 @@ class SearchOrchestrator:
                     "price": price_int,
                     "product_url": product_url,
                     "source": "fastpath",
+                    "mall": mall,
+                    "free_shipping": free_shipping,
                     "top_prices": top_prices,
+                    "price_trend": price_trend,
                     "updated_at": datetime.utcnow().isoformat(),
                 },
             )
@@ -259,7 +273,11 @@ class SearchOrchestrator:
                 query=query,
                 elapsed_ms=self.budget_manager.elapsed() * 1000,
                 product_id=product_id,
+                product_name=product_name,
+                mall=mall if isinstance(mall, str) else None,
+                free_shipping=free_shipping if isinstance(free_shipping, bool) else None,
                 top_prices=top_prices,
+                price_trend=price_trend if isinstance(price_trend, list) else None,
             )
 
         except AsyncTimeoutError as e:
@@ -271,12 +289,18 @@ class SearchOrchestrator:
         except ProductNotFoundException as e:
             self.budget_manager.checkpoint("fastpath_failed")
             logger.debug(f"FastPath: no results found for query='{query}'")
+            if product_code:
+                logger.info(f"FastPath direct pcode failed, retrying query flow: product_code={product_code}")
+                return await self._try_fastpath(query, product_code=None)
             if self.strategy.should_fallback_to_slowpath(e):
                 return None
             raise
         except Exception as e:
             self.budget_manager.checkpoint("fastpath_failed")
             logger.warning(f"FastPath failed: query='{query}', error={type(e).__name__}: {e}")
+            if product_code:
+                logger.info(f"FastPath direct pcode errored, retrying query flow: product_code={product_code}")
+                return await self._try_fastpath(query, product_code=None)
 
             # Fallback 여부 결정
             if not self.strategy.should_fallback_to_slowpath(e):
@@ -285,7 +309,7 @@ class SearchOrchestrator:
 
         return None
 
-    async def _try_slowpath(self, query: str) -> Optional[SearchResult]:
+    async def _try_slowpath(self, query: str, product_code: str | None = None) -> Optional[SearchResult]:
         """SlowPath 실행 시도
 
         Args:
@@ -311,7 +335,7 @@ class SearchOrchestrator:
             timeout = self.budget_manager.get_timeout_for("slowpath")
             logger.debug(f"SlowPath executing: query='{query}', timeout={timeout:.2f}s")
 
-            result = await self.slowpath.execute(query, timeout=timeout)
+            result = await self.slowpath.execute(query, timeout=timeout, product_code=product_code)
 
             # Result validation
             if not result:
@@ -348,17 +372,13 @@ class SearchOrchestrator:
                 f"SlowPath success: query='{query}', price={price_int}, elapsed={self.budget_manager.elapsed():.2f}s"
             )
 
-            # Extract metadata (product_id, top_prices)
             metadata = getattr(result, 'metadata', {}) or {}
             product_id = metadata.get('product_id') or metadata.get('pcode')
-            top_prices = metadata.get('top_prices')
-
-            # Cache 저장
-            # Cache 저장 (full payload)
-            metadata = getattr(result, 'metadata', {}) or {}
-            product_id = metadata.get('product_id') or metadata.get('pcode')
-            top_prices = metadata.get('top_prices')
             product_name = getattr(result, 'product_name', None) or metadata.get('product_name') or query
+            mall = metadata.get('mall')
+            free_shipping = metadata.get('free_shipping')
+            top_prices = metadata.get('top_prices')
+            price_trend = metadata.get('price_trend')
 
             await self._save_to_cache(
                 query,
@@ -369,7 +389,10 @@ class SearchOrchestrator:
                     "price": price_int,
                     "product_url": product_url,
                     "source": "slowpath",
+                    "mall": mall,
+                    "free_shipping": free_shipping,
                     "top_prices": top_prices,
+                    "price_trend": price_trend,
                     "updated_at": datetime.utcnow().isoformat(),
                 },
             )
@@ -380,7 +403,11 @@ class SearchOrchestrator:
                 query=query,
                 elapsed_ms=self.budget_manager.elapsed() * 1000,
                 product_id=product_id,
+                product_name=product_name,
+                mall=mall if isinstance(mall, str) else None,
+                free_shipping=free_shipping if isinstance(free_shipping, bool) else None,
                 top_prices=top_prices,
+                price_trend=price_trend if isinstance(price_trend, list) else None,
             )
 
         except (AsyncTimeoutError, TimeoutError):
@@ -394,6 +421,9 @@ class SearchOrchestrator:
             )
         except ProductNotFoundException:
             self.budget_manager.checkpoint("slowpath_failed")
+            if product_code:
+                logger.info(f"SlowPath direct pcode failed, retrying query flow: product_code={product_code}")
+                return await self._try_slowpath(query, product_code=None)
             logger.info(f"SlowPath: no results for query='{query}'")
             return SearchResult.no_results(
                 query=query,
@@ -404,6 +434,9 @@ class SearchOrchestrator:
             from src.core.exceptions import BlockedException, ParsingException, TimeoutException
 
             self.budget_manager.checkpoint("slowpath_failed")
+            if product_code and not isinstance(e, (BlockedException, TimeoutException, ParsingException)):
+                logger.info(f"SlowPath direct pcode errored, retrying query flow: product_code={product_code}")
+                return await self._try_slowpath(query, product_code=None)
 
             if isinstance(e, BlockedException):
                 logger.warning(f"SlowPath blocked: query='{query}'")

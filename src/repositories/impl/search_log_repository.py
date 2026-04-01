@@ -2,7 +2,7 @@
 from typing import List, Optional, Any, cast
 from datetime import datetime, timedelta
 from sqlalchemy.orm import Session
-from sqlalchemy import func, desc
+from sqlalchemy import func, desc, and_, or_
 
 from src.repositories.models import SearchLog
 from src.core.logging import logger
@@ -56,11 +56,24 @@ class SearchLogRepository:
     def get_total_count(self) -> int:
         """전체 검색 횟수"""
         return self.db.query(func.count(SearchLog.id)).scalar() or 0
+
+    @staticmethod
+    def success_status_filter():
+        """성공으로 간주할 상태 집합."""
+        return SearchLog.status.in_(["SUCCESS", "HIT"])
+
+    @classmethod
+    def cache_hit_filter(cls):
+        """캐시 히트로 간주할 조건."""
+        return or_(
+            and_(SearchLog.source == "cache", cls.success_status_filter()),
+            SearchLog.status == "HIT",
+        )
     
     def get_cache_hit_count(self) -> int:
         """캐시 히트 횟수"""
         return self.db.query(func.count(SearchLog.id)).filter(
-            SearchLog.status == "HIT"
+            self.cache_hit_filter()
         ).scalar() or 0
     
     def get_popular_queries(self, limit: int = 5) -> List[tuple[str, int]]:
@@ -109,12 +122,7 @@ class SearchLogRepository:
         
         hits = self.db.query(func.count(SearchLog.id)).filter(
             SearchLog.created_at >= start_date,
-            SearchLog.status == "HIT"
-        ).scalar() or 0
-        
-        misses = self.db.query(func.count(SearchLog.id)).filter(
-            SearchLog.created_at >= start_date,
-            SearchLog.status == "MISS"
+            self.cache_hit_filter()
         ).scalar() or 0
         
         fails = self.db.query(func.count(SearchLog.id)).filter(
@@ -126,7 +134,7 @@ class SearchLogRepository:
             "period_days": days,
             "total_searches": total,
             "cache_hits": hits,
-            "cache_misses": misses,
+            "cache_misses": max(total - hits - fails, 0),
             "failures": fails,
             "hit_rate": round((hits / total * 100), 2) if total > 0 else 0
         }

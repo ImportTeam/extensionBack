@@ -278,3 +278,51 @@ class DanawaHttpFastPath:
             return None
 
         return chosen_result
+
+    async def fetch_product_by_code(
+        self,
+        query: str,
+        product_code: str,
+        timeout_ms: int,
+    ) -> Optional[dict]:
+        """pcode가 이미 있을 때 상품 상세 페이지만 직접 조회."""
+        if not product_code or not product_code.isdigit() or timeout_ms <= 0:
+            return None
+
+        product_url = f"{self.product_url}?pcode={product_code}&keyword={quote(query)}"
+        product_html = await self._fetch_html(url=product_url, timeout_ms=timeout_ms)
+        if not product_html:
+            return None
+
+        try:
+            if not has_product_fingerprint(product_html):
+                logger.info(f"[FAST_PATH] No product fingerprint found for direct pcode={product_code}")
+                return None
+        except Exception:
+            return None
+
+        parsed = parse_product_lowest_price(
+            product_html,
+            fallback_name=query,
+            product_url=product_url,
+        )
+        if not parsed:
+            return None
+
+        from datetime import datetime
+
+        return {
+            "product_name": parsed.product_name,
+            "lowest_price": parsed.lowest_price,
+            "price": parsed.lowest_price,
+            "product_url": parsed.link,
+            "link": parsed.link,
+            "source": "danawa",
+            "mall": parsed.mall,
+            "free_shipping": parsed.free_shipping,
+            "top_prices": parsed.top_prices,
+            "price_trend": parsed.price_trend,
+            "pcode": product_code,
+            "updated_at": datetime.now().isoformat(),
+            "_path": "http_fastpath_direct",
+        }

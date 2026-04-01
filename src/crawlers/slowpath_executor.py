@@ -37,7 +37,12 @@ class SlowPathExecutor(SearchExecutor):
         self.crawler = crawler
         self._browser_manager: Optional[Any] = None
 
-    async def execute(self, query: str, timeout: float) -> CrawlResult:
+    async def execute(
+        self,
+        query: str,
+        timeout: float,
+        product_code: str | None = None,
+    ) -> CrawlResult:
         """Playwright SlowPath 실행
 
         Args:
@@ -91,17 +96,20 @@ class SlowPathExecutor(SearchExecutor):
 
             # 1단계: 상품 검색 (pcode 추출)
             try:
-                search_url_base = "https://search.danawa.com/dsearch.php"
-                
-                # 타임아웃 계산: 전체 타임아웃의 60%를 검색에 할당 (Playwright needs more time)
-                search_timeout = max(8.0, timeout * 0.6)
-                
-                pcode = await search_product(
-                    create_page=lambda: new_page(),
-                    search_url_base=search_url_base,
-                    search_query=normalized_query,
-                    overall_timeout_s=search_timeout,
-                )
+                if product_code:
+                    pcode = product_code
+                else:
+                    search_url_base = "https://search.danawa.com/dsearch.php"
+
+                    # 타임아웃 계산: 전체 타임아웃의 60%를 검색에 할당 (Playwright needs more time)
+                    search_timeout = max(8.0, timeout * 0.6)
+
+                    pcode = await search_product(
+                        create_page=lambda: new_page(),
+                        search_url_base=search_url_base,
+                        search_query=normalized_query,
+                        overall_timeout_s=search_timeout,
+                    )
 
                 if not pcode or not isinstance(pcode, str):
                     logger.warning(f"[SlowPath] search_product returned invalid pcode: {pcode}")
@@ -120,13 +128,14 @@ class SlowPathExecutor(SearchExecutor):
 
             # 2단계: 가격 정보 가져오기
             try:
-                product_url_base = f"https://prod.danawa.com/info/?pcode={pcode}"
+                product_url_base = "https://prod.danawa.com/info/"
                 
                 price_data: Optional[Dict[str, Any]] = await get_product_lowest_price(
                     page=page,
                     product_url_base=product_url_base,
                     product_code=pcode,
                     search_query=normalized_query,
+                    skip_match_validation=bool(product_code),
                 )
 
                 if not price_data or not isinstance(price_data, dict):
@@ -158,13 +167,19 @@ class SlowPathExecutor(SearchExecutor):
                 )
 
                 return CrawlResult(
-                    product_url=product_url_base,
+                    product_url=EdgeCaseHandler.safe_get(price_data, "link") or f"{product_url_base}?pcode={pcode}",
                     price=price_int,
                     product_name=price_data.get("product_name"),
                     metadata={
                         "method": "slowpath",
                         "timeout": timeout,
+                        "product_id": pcode,
                         "pcode": pcode,
+                        "product_name": price_data.get("product_name"),
+                        "mall": price_data.get("mall"),
+                        "free_shipping": price_data.get("free_shipping"),
+                        "top_prices": price_data.get("top_prices"),
+                        "price_trend": price_data.get("price_trend"),
                     },
                 )
 

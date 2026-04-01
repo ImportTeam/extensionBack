@@ -20,6 +20,7 @@ async def get_product_lowest_price(
     product_url_base: str,
     product_code: str,
     search_query: str,
+    skip_match_validation: bool = False,
 ) -> Optional[Dict]:
     """
     상품 상세 페이지에서 쇼핑몰별 최저가 Top 1 추출
@@ -41,7 +42,8 @@ async def get_product_lowest_price(
     """
     try:
         # 상품 상세 페이지 이동
-        product_url = f"{product_url_base}?pcode={product_code}&keyword={quote(search_query)}"
+        separator = "&" if "?" in product_url_base else "?"
+        product_url = f"{product_url_base}{separator}pcode={product_code}&keyword={quote(search_query)}"
         await page.goto(product_url, wait_until='domcontentloaded')
 
         # 가격 영역 대기
@@ -80,7 +82,7 @@ async def get_product_lowest_price(
         # 🔴 기가차드 수정: 상품명 검증 (pcode 오매핑 최종 방어)
         from src.utils.text_utils import weighted_match_score
         match_score = weighted_match_score(search_query, product_name)
-        if match_score < 45.0:
+        if not skip_match_validation and match_score < 45.0:
             logger.error(
                 f"Product mismatch on detail page! query='{search_query}' vs page='{product_name}' "
                 f"(score: {match_score:.1f})"

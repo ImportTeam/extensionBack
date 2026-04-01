@@ -22,16 +22,28 @@ from src.engine.strategy import ExecutionStrategy
 class FakeResult:
     product_url: str
     price: int
+    product_name: str = "matched"
+    metadata: dict[str, Any] | None = None
 
 
 class FakeFastPath:
-    def __init__(self, result: Optional[FakeResult] = None, error: Optional[Exception] = None):
+    def __init__(
+        self,
+        result: Optional[FakeResult] = None,
+        error: Optional[Exception] = None,
+        error_by_product_code: Optional[dict[Optional[str], Exception]] = None,
+    ):
         self.result = result
         self.error = error
+        self.error_by_product_code = error_by_product_code or {}
         self.calls = 0
+        self.received_product_codes: list[Optional[str]] = []
 
-    async def execute(self, query: str, timeout: float):
+    async def execute(self, query: str, timeout: float, product_code: Optional[str] = None):
         self.calls += 1
+        self.received_product_codes.append(product_code)
+        if product_code in self.error_by_product_code:
+            raise self.error_by_product_code[product_code]
         if self.error:
             raise self.error
         return self.result
@@ -42,9 +54,11 @@ class FakeSlowPath:
         self.result = result
         self.error = error
         self.calls = 0
+        self.received_product_codes: list[Optional[str]] = []
 
-    async def execute(self, query: str, timeout: float):
+    async def execute(self, query: str, timeout: float, product_code: Optional[str] = None):
         self.calls += 1
+        self.received_product_codes.append(product_code)
         if self.error:
             raise self.error
         return self.result
@@ -93,7 +107,20 @@ class TestOrchestratorFlow:
     @pytest.mark.asyncio
     async def test_fastpath_success_and_cached(self):
         cache = FakeCache(hit=None)
-        fast = FakeFastPath(result=FakeResult("f", 2000))
+        fast = FakeFastPath(
+            result=FakeResult(
+                "f",
+                2000,
+                product_name="real product",
+                metadata={
+                    "product_name": "real product",
+                    "mall": "Danawa",
+                    "free_shipping": True,
+                    "top_prices": [{"price": 2000}],
+                    "price_trend": [{"label": "today", "price": 2000}],
+                },
+            )
+        )
         slow = FakeSlowPath(result=FakeResult("s", 3000))
 
         orch = make_orchestrator(cache, fast, slow)
@@ -103,6 +130,10 @@ class TestOrchestratorFlow:
         assert fast.calls == 1
         assert slow.calls == 0
         assert cache.saved["query"]["price"] == 2000
+        assert result.product_name == "real product"
+        assert result.mall == "Danawa"
+        assert result.free_shipping is True
+        assert result.price_trend == [{"label": "today", "price": 2000}]
 
     @pytest.mark.asyncio
     async def test_fallback_to_slowpath_on_fastpath_none(self):
@@ -128,6 +159,35 @@ class TestOrchestratorFlow:
 
         # SlowPath returning None is treated as a parse error
         assert result.status == SearchStatus.PARSE_ERROR
+
+    @pytest.mark.asyncio
+    async def test_product_code_is_forwarded_to_fastpath(self):
+        cache = FakeCache(hit=None)
+        fast = FakeFastPath(result=FakeResult("f", 2000))
+        slow = FakeSlowPath(result=FakeResult("s", 3000))
+
+        orch = make_orchestrator(cache, fast, slow)
+        result = await orch.search("query", product_code="12345")
+
+        assert result.status == SearchStatus.FASTPATH_SUCCESS
+        assert fast.received_product_codes == ["12345"]
+        assert slow.calls == 0
+
+    @pytest.mark.asyncio
+    async def test_product_code_falls_back_to_query_search(self):
+        cache = FakeCache(hit=None)
+        fast = FakeFastPath(
+            result=FakeResult("f", 2000),
+            error_by_product_code={"12345": Exception("direct pcode failed")},
+        )
+        slow = FakeSlowPath(result=FakeResult("s", 3000))
+
+        orch = make_orchestrator(cache, fast, slow)
+        result = await orch.search("query", product_code="12345")
+
+        assert result.status == SearchStatus.FASTPATH_SUCCESS
+        assert fast.received_product_codes == ["12345", None]
+        assert slow.received_product_codes == []
 
 
 class TestBudgetAndValidation:
@@ -166,4 +226,3 @@ class TestExecutionStrategy:
         assert ExecutionStrategy.should_fallback_to_slowpath(EngineTimeout()) is True
         assert ExecutionStrategy.should_fallback_to_slowpath(BlockedException("blocked")) is True
         assert ExecutionStrategy.should_fallback_to_slowpath(ValueError("noop")) is False
-

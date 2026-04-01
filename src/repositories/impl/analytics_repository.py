@@ -8,6 +8,21 @@ from sqlalchemy.orm import Session
 from src.repositories.models import SearchLog
 
 
+def _success_status_filter():
+    return SearchLog.status.in_(["SUCCESS", "HIT"])
+
+
+def _failure_status_filter():
+    return SearchLog.status.in_(["FAIL", "ERROR"])
+
+
+def _cache_hit_filter():
+    return or_(
+        and_(SearchLog.source == "cache", _success_status_filter()),
+        SearchLog.status == "HIT",
+    )
+
+
 class AnalyticsRepository:
     """검색 로그 분석 쿼리"""
 
@@ -47,7 +62,7 @@ class AnalyticsRepository:
         successful = self.db.query(SearchLog).filter(
             and_(
                 SearchLog.created_at >= cutoff_date,
-                SearchLog.status == "SUCCESS"
+                _success_status_filter()
             )
         ).count()
         
@@ -55,7 +70,7 @@ class AnalyticsRepository:
         failed = self.db.query(SearchLog).filter(
             and_(
                 SearchLog.created_at >= cutoff_date,
-                SearchLog.status.in_(["FAIL", "ERROR"])
+                _failure_status_filter()
             )
         ).count()
         
@@ -68,8 +83,7 @@ class AnalyticsRepository:
         cache_hits = self.db.query(SearchLog).filter(
             and_(
                 SearchLog.created_at >= cutoff_date,
-                SearchLog.source == "cache",
-                SearchLog.status == "SUCCESS"
+                _cache_hit_filter()
             )
         ).count()
         
@@ -77,7 +91,7 @@ class AnalyticsRepository:
             and_(
                 SearchLog.created_at >= cutoff_date,
                 SearchLog.source == "fastpath",
-                SearchLog.status == "SUCCESS"
+                _success_status_filter()
             )
         ).count()
         
@@ -85,7 +99,7 @@ class AnalyticsRepository:
             and_(
                 SearchLog.created_at >= cutoff_date,
                 SearchLog.source == "slowpath",
-                SearchLog.status == "SUCCESS"
+                _success_status_filter()
             )
         ).count()
         
@@ -127,7 +141,7 @@ class AnalyticsRepository:
                 and_(
                     SearchLog.created_at >= cutoff_date,
                     SearchLog.source == source,
-                    SearchLog.status == "SUCCESS"
+                    _success_status_filter()
                 )
             ).count()
             
@@ -167,7 +181,7 @@ class AnalyticsRepository:
         ).filter(
             and_(
                 SearchLog.created_at >= cutoff_date,
-                SearchLog.status.in_(["FAIL", "ERROR"])
+                _failure_status_filter()
             )
         ).group_by(
             SearchLog.query_name
@@ -199,7 +213,7 @@ class AnalyticsRepository:
         results = self.db.query(
             SearchLog.query_name,
             func.count(SearchLog.id).label("total_count"),
-            func.sum(func.cast(SearchLog.status == "SUCCESS", type_=int)).label("success_count"),
+            func.sum(func.cast(_success_status_filter(), type_=int)).label("success_count"),
         ).filter(
             SearchLog.created_at >= cutoff_date
         ).group_by(
@@ -272,7 +286,7 @@ class AnalyticsRepository:
         results = self.db.query(SearchLog).filter(
             and_(
                 SearchLog.created_at >= cutoff_date,
-                SearchLog.status == "SUCCESS",
+                _success_status_filter(),
                 SearchLog.origin_price.isnot(None),
                 SearchLog.found_price.isnot(None),
             )
@@ -339,7 +353,7 @@ class AnalyticsRepository:
         results = self.db.query(
             SearchLog.product_id,
             func.count(SearchLog.id).label("total_count"),
-            func.sum(func.cast(SearchLog.status == "SUCCESS", type_=int)).label("success_count"),
+            func.sum(func.cast(_success_status_filter(), type_=int)).label("success_count"),
             func.max(SearchLog.created_at).label("last_attempt"),
             func.max(SearchLog.query_name).label("recent_query"),
         ).filter(
@@ -390,7 +404,7 @@ class AnalyticsRepository:
             and_(
                 SearchLog.created_at >= cutoff_date,
                 SearchLog.query_name.contains("["),
-                SearchLog.status == "SUCCESS"
+                _success_status_filter()
             )
         ).count()
         
@@ -406,7 +420,7 @@ class AnalyticsRepository:
             and_(
                 SearchLog.created_at >= cutoff_date,
                 ~SearchLog.query_name.contains("["),
-                SearchLog.status == "SUCCESS"
+                _success_status_filter()
             )
         ).count()
         

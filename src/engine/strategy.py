@@ -24,7 +24,12 @@ class SearchExecutor(Protocol):
     FastPath/SlowPath Executor가 구현해야 할 프로토콜입니다.
     """
 
-    async def execute(self, query: str, timeout: float):
+    async def execute(
+        self,
+        query: str,
+        timeout: float,
+        product_code: str | None = None,
+    ):
         """검색 실행
 
         Args:

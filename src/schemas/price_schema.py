@@ -1,6 +1,6 @@
 """Pydantic 스키마 정의 (Security & Validation Enhanced)"""
 from typing import Optional, List, Any
-from pydantic import BaseModel, Field, field_validator, model_validator
+from pydantic import BaseModel, Field, field_validator, model_validator, ConfigDict
 from datetime import datetime
 
 
@@ -12,6 +12,8 @@ class SelectedOption(BaseModel):
 
 class PriceSearchRequest(BaseModel):
     """최저가 검색 요청 (입력 검증 강화)"""
+    model_config = ConfigDict(populate_by_name=True)
+
     product_name: str = Field(..., min_length=1, max_length=500, description="검색할 상품명")
     current_price: Optional[int] = Field(None, ge=0, le=10**9, description="현재 가격 (0~10억)")
     current_url: Optional[str] = Field(None, max_length=2048, description="현재 URL")

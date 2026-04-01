@@ -91,7 +91,7 @@ class DanawaSearchHelper:
 
         # 🔴 핵심 2: 연도 제거 + 칩셋 제거(광범위) - 출시 전/희소 모델 대비
         # 예: "... M4" → "..." (단, 맥북 등은 칩셋이 중요하므로 1번을 먼저 둠)
-        no_year_drop_chip = re.sub(r"\b(?i)(M|m)\s*\d+\b", " ", no_year_keep_chip)
+        no_year_drop_chip = re.sub(r"\bM\s*\d+\b", " ", no_year_keep_chip, flags=re.IGNORECASE)
         no_year_drop_chip = re.sub(r"\s+", " ", no_year_drop_chip).strip()
         if no_year_drop_chip and no_year_drop_chip.lower() not in seen:
             add_candidate(no_year_drop_chip, reason="연도 제거+칩셋 제거(광범위)")

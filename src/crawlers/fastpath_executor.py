@@ -31,7 +31,12 @@ class FastPathExecutor(SearchExecutor):
         """
         self.crawler = crawler
 
-    async def execute(self, query: str, timeout: float) -> CrawlResult:
+    async def execute(
+        self,
+        query: str,
+        timeout: float,
+        product_code: str | None = None,
+    ) -> CrawlResult:
         """HTTP FastPath 실행
 
         Args:
@@ -64,32 +69,41 @@ class FastPathExecutor(SearchExecutor):
                 logger.warning(f"[FastPath] Normalized query is empty for: {query}")
                 raise ValueError(f"Normalized query is empty for: {query}")
 
-            # 검색 후보 생성
-            try:
-                from src.utils.search.search_optimizer import DanawaSearchHelper
-                helper = DanawaSearchHelper()
-                candidates: List[str] = helper.generate_search_candidates(normalized_query)
-                
-                if not candidates:
-                    logger.warning(f"[FastPath] No search candidates generated for: {normalized_query}")
-                    raise ProductNotFoundException(f"No search candidates for: {query}")
-            except Exception as e:
-                logger.error(f"[FastPath] Failed to generate search candidates: {type(e).__name__}: {e}")
-                raise
+            candidates: List[str] = []
+            if not product_code:
+                # 검색 후보 생성
+                try:
+                    from src.utils.search.search_optimizer import DanawaSearchHelper
+                    helper = DanawaSearchHelper()
+                    candidates = helper.generate_search_candidates(normalized_query)
+                    
+                    if not candidates:
+                        logger.warning(f"[FastPath] No search candidates generated for: {normalized_query}")
+                        raise ProductNotFoundException(f"No search candidates for: {query}")
+                except Exception as e:
+                    logger.error(f"[FastPath] Failed to generate search candidates: {type(e).__name__}: {e}")
+                    raise
 
             # HTTP FastPath 실행
             try:
                 from src.crawlers.boundary import DanawaHttpFastPath
                 fastpath = DanawaHttpFastPath()
                 
-                result = await fastpath.search_lowest_price(
-                    query=normalized_query,
-                    candidates=candidates,
-                    total_timeout_ms=int(timeout * 1000),
-                )
+                if product_code:
+                    result = await fastpath.fetch_product_by_code(
+                        query=normalized_query,
+                        product_code=product_code,
+                        timeout_ms=int(timeout * 1000),
+                    )
+                else:
+                    result = await fastpath.search_lowest_price(
+                        query=normalized_query,
+                        candidates=candidates,
+                        total_timeout_ms=int(timeout * 1000),
+                    )
 
                 # Fallback: 모든 후보 실패 시 간단한 검색어로 재시도 (1회)
-                if not result and len(candidates) > 2:
+                if not result and not product_code and len(candidates) > 2:
                     logger.info(f"[FastPath] First attempt failed, trying fallback search...")
                     # 브랜드 + 모델만으로 간단한 후보 생성
                     from src.utils.search.search_optimizer import DanawaSearchHelper
@@ -151,6 +165,9 @@ class FastPathExecutor(SearchExecutor):
                 # Extract metadata from result
                 top_prices = EdgeCaseHandler.safe_get(result, "top_prices")
                 product_id = EdgeCaseHandler.safe_get(result, "pcode")  # danawa pcode
+                price_trend = EdgeCaseHandler.safe_get(result, "price_trend")
+                mall = EdgeCaseHandler.safe_get(result, "mall")
+                free_shipping = EdgeCaseHandler.safe_get(result, "free_shipping")
 
                 return CrawlResult(
                     product_url=product_url,
@@ -161,7 +178,11 @@ class FastPathExecutor(SearchExecutor):
                         "timeout": timeout,
                         "product_id": product_id,
                         "pcode": product_id,  # alias
+                        "product_name": EdgeCaseHandler.safe_str(product_name),
+                        "mall": EdgeCaseHandler.safe_str(mall) if mall is not None else None,
+                        "free_shipping": bool(free_shipping) if free_shipping is not None else None,
                         "top_prices": top_prices,
+                        "price_trend": price_trend if isinstance(price_trend, list) else None,
                     },
                 )
             

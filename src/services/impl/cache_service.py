@@ -1,12 +1,13 @@
 """Redis 캐시 서비스 - 캐싱 로직만 담당"""
 import json
 from typing import Optional
+from urllib.parse import urlparse, urlunparse
+
 from redis import Redis
 
 from src.core.config import settings
 from src.core.logging import logger
 from src.core.exceptions import (
-    CacheException,
     CacheConnectionException,
     CacheSerializationException,
 )
@@ -16,12 +17,22 @@ from src.utils.hash_utils import generate_cache_key, generate_negative_cache_key
 
 class CacheService:
     """Redis 캐시 관리 서비스"""
+
+    @staticmethod
+    def _resolve_redis_url(redis_url: str) -> str:
+        """Upstash 같은 TLS 전용 Redis는 rediss://로 보정한다."""
+        parsed = urlparse(redis_url)
+        if parsed.scheme == "redis" and parsed.hostname and parsed.hostname.endswith("upstash.io"):
+            return urlunparse(parsed._replace(scheme="rediss"))
+        return redis_url
     
     def __init__(self):
         """Redis 클라이언트 초기화"""
+        self.redis_client = None
         try:
+            redis_url = self._resolve_redis_url(settings.redis_url)
             self.redis_client = Redis.from_url(
-                settings.redis_url,
+                redis_url,
                 decode_responses=True,
                 socket_connect_timeout=5,
                 socket_timeout=5
@@ -31,11 +42,7 @@ class CacheService:
             logger.info("Redis connection established")
         except Exception as e:
             logger.error(f"Failed to connect to Redis: {e}")
-            raise CacheConnectionException(
-                message=f"Redis connection failed",
-                error_code="CACHE_CONN_FAILED",
-                details={"reason": str(e)}
-            )
+            self.redis_client = None
     
     def get(self, product_name: str) -> Optional[CachedPrice]:
         """
@@ -92,8 +99,8 @@ class CacheService:
             except (TypeError, ValueError) as e:
                 logger.error(f"Failed to serialize cache data: {e}")
                 raise CacheSerializationException(
-                    message="Failed to serialize cache data",
-                    error_code="CACHE_SER_FAILED",
+                    operation="write",
+                    reason="Failed to serialize cache data",
                     details={"error": str(e)}
                 )
             
@@ -116,8 +123,7 @@ class CacheService:
         except Exception as e:
             logger.error(f"Cache write error: {e}")
             raise CacheConnectionException(
-                message="Failed to write cache",
-                error_code="CACHE_WRITE_FAILED",
+                reason="Failed to write cache",
                 details={"error": str(e)}
             )
 

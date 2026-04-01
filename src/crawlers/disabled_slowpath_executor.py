@@ -17,9 +17,14 @@ from .result import CrawlResult
 
 
 class DisabledSlowPathExecutor(SearchExecutor):
-    async def execute(self, query: str, timeout: float) -> CrawlResult:
+    async def execute(
+        self,
+        query: str,
+        timeout: float,
+        product_code: str | None = None,
+    ) -> CrawlResult:
         logger.info(
-            f"[SlowPath:disabled] Skipping browser fallback: query='{query}', timeout={timeout:.2f}s"
+            f"[SlowPath:disabled] Skipping browser fallback: query='{query}', timeout={timeout:.2f}s, product_code={product_code}"
         )
         raise ProductNotFoundException(
             query=query,

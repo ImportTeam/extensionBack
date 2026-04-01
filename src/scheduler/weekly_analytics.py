@@ -1,7 +1,6 @@
 """매주 분석 리포트 생성 스케줄러"""
 
 from datetime import datetime
-import asyncio
 from sqlalchemy.orm import Session
 
 from src.core.logging import logger
@@ -13,7 +12,7 @@ class WeeklyAnalyticsScheduler:
     """주간 분석 리포트 생성 스케줄러"""
     
     @staticmethod
-    async def run_weekly_analysis():
+    def run_weekly_analysis():
         """주간 분석 실행"""
         db = SessionLocal()
         try:
@@ -105,6 +104,5 @@ def _log_weekly_analysis(report: dict, recommendations: dict):
 
 # 수동 테스트용
 if __name__ == "__main__":
-    import asyncio
-    result = asyncio.run(WeeklyAnalyticsScheduler.run_weekly_analysis())
+    result = WeeklyAnalyticsScheduler.run_weekly_analysis()
     print(result)

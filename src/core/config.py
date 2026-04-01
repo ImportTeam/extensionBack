@@ -1,7 +1,12 @@
 """설정 관리 - 환경 변수 로드 및 검증"""
-from typing import Optional
+from pathlib import Path
+
+from dotenv import load_dotenv
 from pydantic_settings import BaseSettings
 from pydantic import field_validator
+
+
+load_dotenv(Path(__file__).resolve().parents[2] / ".env", override=True)
 
 
 class Settings(BaseSettings):
@@ -123,7 +128,7 @@ class Settings(BaseSettings):
         return v
     
     class Config:
-        env_file = ".env"
+        env_file = Path(__file__).resolve().parents[2] / ".env"
         case_sensitive = False
 
 
