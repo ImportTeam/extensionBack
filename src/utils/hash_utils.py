@@ -39,3 +39,12 @@ def generate_negative_cache_key(product_name: str) -> str:
     cleaned = clean_product_name(product_name)
     hashed = hash_string(cleaned)
     return f"price:neg:{hashed}"
+
+
+def generate_exact_cache_key(product_code: str) -> str:
+    """상품 코드 기반 exact cache 키 생성."""
+    cleaned = (product_code or "").strip()
+    if not cleaned:
+        raise ValueError("product_code must not be empty")
+    hashed = hash_string(cleaned)
+    return f"price:exact:{hashed}"

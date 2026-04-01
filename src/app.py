@@ -14,19 +14,30 @@ async def lifespan(app: FastAPI):
     """애플리케이션 생명주기"""
     logger.info("Starting application...")
     init_db()
-    
-    # 스케줄러 시작
+
     try:
         from src.scheduler.weekly_analytics import WeeklyAnalyticsScheduler
-        scheduler = WeeklyAnalyticsScheduler.schedule_with_apscheduler()
-        scheduler.start()
-        logger.info("Weekly analytics scheduler started")
+        scheduler = getattr(app.state, "weekly_scheduler", None)
+        if scheduler is None:
+            scheduler = WeeklyAnalyticsScheduler.schedule_with_apscheduler()
+            app.state.weekly_scheduler = scheduler
+        if not scheduler.running:
+            scheduler.start()
+            logger.info("Weekly analytics scheduler started")
     except Exception as e:
         logger.warning(f"Failed to start scheduler: {e}")
-    
+
     logger.info("Application started")
     yield
     logger.info("Shutting down application...")
+    scheduler = getattr(app.state, "weekly_scheduler", None)
+    if scheduler is not None:
+        try:
+            scheduler.shutdown(wait=False)
+        except Exception as e:
+            logger.warning(f"Failed to shutdown scheduler cleanly: {e}")
+        finally:
+            delattr(app.state, "weekly_scheduler")
     try:
         from src.crawlers.http_client import shutdown_shared_http_client
         await shutdown_shared_http_client()

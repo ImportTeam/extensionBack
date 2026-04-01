@@ -65,15 +65,31 @@ class FakeSlowPath:
 
 
 class FakeCache:
-    def __init__(self, hit: Optional[dict[str, Any]] = None):
+    def __init__(
+        self,
+        hit: Optional[dict[str, Any]] = None,
+        exact_hit: Optional[dict[str, Any]] = None,
+    ):
         self.hit = hit
+        self.exact_hit = exact_hit
         self.saved: dict[str, dict[str, Any]] = {}
+        self.saved_exact: dict[str, dict[str, Any]] = {}
+        self.get_calls: list[str] = []
+        self.get_exact_calls: list[str] = []
 
     async def get(self, key: str, timeout: float) -> Optional[dict[str, Any]]:
+        self.get_calls.append(key)
         return self.hit
+
+    async def get_exact(self, product_code: str, timeout: float) -> Optional[dict[str, Any]]:
+        self.get_exact_calls.append(product_code)
+        return self.exact_hit
 
     async def set(self, key: str, value: dict[str, Any], ttl: int) -> None:
         self.saved[key] = value
+
+    async def set_exact(self, product_code: str, value: dict[str, Any], ttl: int) -> None:
+        self.saved_exact[product_code] = value
 
 
 def make_orchestrator(
@@ -172,6 +188,9 @@ class TestOrchestratorFlow:
         assert result.status == SearchStatus.FASTPATH_SUCCESS
         assert fast.received_product_codes == ["12345"]
         assert slow.calls == 0
+        assert cache.get_calls == []
+        assert cache.saved == {}
+        assert cache.saved_exact["12345"]["price"] == 2000
 
     @pytest.mark.asyncio
     async def test_product_code_falls_back_to_query_search(self):
@@ -185,9 +204,78 @@ class TestOrchestratorFlow:
         orch = make_orchestrator(cache, fast, slow)
         result = await orch.search("query", product_code="12345")
 
+        assert result.status == SearchStatus.SLOWPATH_SUCCESS
+        assert fast.received_product_codes == ["12345"]
+        assert slow.received_product_codes == ["12345"]
+        assert cache.get_calls == []
+
+    @pytest.mark.asyncio
+    async def test_exact_path_falls_back_to_generic_query_after_direct_miss(self):
+        cache = FakeCache(hit=None)
+        fast = FakeFastPath(
+            result=FakeResult("f", 2000),
+            error_by_product_code={"12345": Exception("direct pcode failed")},
+        )
+        slow = FakeSlowPath(result=None)
+
+        orch = make_orchestrator(cache, fast, slow)
+        result = await orch.search("query", product_code="12345")
+
         assert result.status == SearchStatus.FASTPATH_SUCCESS
         assert fast.received_product_codes == ["12345", None]
-        assert slow.received_product_codes == []
+        assert slow.received_product_codes == ["12345"]
+        assert cache.get_calls == ["query"]
+
+    @pytest.mark.asyncio
+    async def test_exact_request_does_not_use_generic_cache_hit(self):
+        cache = FakeCache(
+            hit={"product_url": "generic", "price": 1111},
+            exact_hit=None,
+        )
+        fast = FakeFastPath(result=FakeResult("exact", 2000))
+        slow = FakeSlowPath(result=None)
+
+        orch = make_orchestrator(cache, fast, slow)
+        result = await orch.search("query", product_code="12345")
+
+        assert result.status == SearchStatus.FASTPATH_SUCCESS
+        assert cache.get_calls == []
+        assert cache.get_exact_calls == ["12345"]
+
+    @pytest.mark.asyncio
+    async def test_exact_cache_hit_is_used_only_for_exact_requests(self):
+        cache = FakeCache(
+            hit=None,
+            exact_hit={"product_url": "exact", "price": 9999, "product_id": "12345"},
+        )
+        fast = FakeFastPath(result=None)
+        slow = FakeSlowPath(result=None)
+
+        orch = make_orchestrator(cache, fast, slow)
+        exact_result = await orch.search("query", product_code="12345")
+
+        assert exact_result.status == SearchStatus.CACHE_HIT
+        assert cache.get_exact_calls == ["12345"]
+        assert fast.calls == 0
+
+        generic_result = await orch.search("query")
+
+        assert generic_result.status == SearchStatus.PARSE_ERROR
+        assert cache.get_calls[-1] == "query"
+        assert cache.get_exact_calls == ["12345"]
+
+    @pytest.mark.asyncio
+    async def test_exact_success_does_not_write_generic_cache(self):
+        cache = FakeCache(hit=None, exact_hit=None)
+        fast = FakeFastPath(result=FakeResult("exact-url", 2000, metadata={"product_id": "12345"}))
+        slow = FakeSlowPath(result=None)
+
+        orch = make_orchestrator(cache, fast, slow)
+        result = await orch.search("query", product_code="12345")
+
+        assert result.status == SearchStatus.FASTPATH_SUCCESS
+        assert cache.saved == {}
+        assert cache.saved_exact["12345"]["product_id"] == "12345"
 
 
 class TestBudgetAndValidation:

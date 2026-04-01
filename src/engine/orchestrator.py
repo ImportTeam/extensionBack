@@ -83,30 +83,9 @@ class SearchOrchestrator:
         logger.info(f"Search started: query='{query}'")
 
         try:
-            # 1. Cache 확인
-            result = await self._try_cache(query)
-            if result:
-                logger.info(f"Search completed from cache: query='{query}'")
-                return result
-
-            # 2. FastPath 시도
-            result = await self._try_fastpath(query, product_code=product_code)
-            if result:
-                logger.info(f"Search completed from fastpath: query='{query}'")
-                return result
-
-            # 3. SlowPath Fallback
-            result = await self._try_slowpath(query, product_code=product_code)
-            if result:
-                logger.info(f"Search completed from slowpath: query='{query}'")
-                return result
-
-            # 4. 모든 경로 실패
-            logger.warning(f"No results found: query='{query}'")
-            return SearchResult.no_results(
-                query=query,
-                elapsed_ms=self.budget_manager.elapsed() * 1000,
-            )
+            if product_code:
+                return await self._search_exact_path(query, product_code)
+            return await self._search_generic_path(query)
 
         except Exception as e:
             logger.error(f"Search failed: query='{query}', error={type(e).__name__}", exc_info=True)
@@ -115,6 +94,50 @@ class SearchOrchestrator:
                 elapsed_ms=self.budget_manager.elapsed() * 1000,
                 error=str(e),
             )
+
+    async def _search_exact_path(self, query: str, product_code: str) -> SearchResult:
+        """상품 코드 기반 exact 검색 경로."""
+        result = await self._try_exact_cache(query, product_code)
+        if result:
+            logger.info(f"Search completed from exact cache: query='{query}', product_code='{product_code}'")
+            return result
+
+        result = await self._try_fastpath(query, product_code=product_code)
+        if result:
+            logger.info(f"Search completed from fastpath exact path: query='{query}', product_code='{product_code}'")
+            return result
+
+        result = await self._try_slowpath(query, product_code=product_code)
+        if result and result.is_success:
+            logger.info(f"Search completed from slowpath exact path: query='{query}', product_code='{product_code}'")
+            return result
+
+        logger.info(f"Exact path failed, falling back to generic query flow: query='{query}', product_code='{product_code}'")
+        return await self._search_generic_path(query)
+
+    async def _search_generic_path(self, query: str) -> SearchResult:
+        """일반 검색어 기반 generic 검색 경로."""
+        result = await self._try_cache(query)
+        if result:
+            logger.info(f"Search completed from cache: query='{query}'")
+            return result
+
+        result = await self._try_fastpath(query)
+        if result:
+            logger.info(f"Search completed from fastpath: query='{query}'")
+            return result
+
+        result = await self._try_slowpath(query)
+        if result:
+            if result.is_success:
+                logger.info(f"Search completed from slowpath: query='{query}'")
+            return result
+
+        logger.warning(f"No results found: query='{query}'")
+        return SearchResult.no_results(
+            query=query,
+            elapsed_ms=self.budget_manager.elapsed() * 1000,
+        )
 
     async def _try_cache(self, query: str) -> Optional[SearchResult]:
         """Cache 조회 시도
@@ -184,6 +207,26 @@ class SearchOrchestrator:
             logger.warning(f"Cache lookup failed: {type(e).__name__}: {e}")
             return None
 
+    async def _try_exact_cache(self, query: str, product_code: str) -> Optional[SearchResult]:
+        """상품 코드 기반 exact cache 조회."""
+        try:
+            timeout = self.budget_manager.get_timeout_for("cache")
+            cached = await self.cache.get_exact(product_code, timeout=timeout)
+
+            if not cached:
+                self.budget_manager.checkpoint("exact_cache_miss")
+                return None
+
+            self.budget_manager.checkpoint("exact_cache_hit")
+            logger.debug(f"Exact cache hit: query='{query}', product_code='{product_code}'")
+            return self._build_cache_result(query=query, cached=cached)
+        except AsyncTimeoutError as e:
+            logger.warning(f"Exact cache lookup timeout: {e}")
+            return None
+        except Exception as e:
+            logger.warning(f"Exact cache lookup failed: {type(e).__name__}: {e}")
+            return None
+
     async def _try_fastpath(self, query: str, product_code: str | None = None) -> Optional[SearchResult]:
         """FastPath 실행 시도
 
@@ -240,58 +283,31 @@ class SearchOrchestrator:
                 f"FastPath success: query='{query}', price={price_int}, elapsed={self.budget_manager.elapsed():.2f}s"
             )
 
-            # Extract metadata (product_id, top_prices)
-            metadata = getattr(result, 'metadata', {}) or {}
-            product_id = metadata.get('product_id') or metadata.get('pcode')
-            product_name = getattr(result, 'product_name', None) or metadata.get('product_name') or query
-            mall = metadata.get('mall')
-            free_shipping = metadata.get('free_shipping')
-            top_prices = metadata.get('top_prices')
-            price_trend = metadata.get('price_trend')
-
-            # Cache 저장 (full payload)
-            await self._save_to_cache(
-                query,
-                {
-                    "product_name": product_name,
-                    "product_id": product_id,
-                    "lowest_price": price_int,
-                    "price": price_int,
-                    "product_url": product_url,
-                    "source": "fastpath",
-                    "mall": mall,
-                    "free_shipping": free_shipping,
-                    "top_prices": top_prices,
-                    "price_trend": price_trend,
-                    "updated_at": datetime.utcnow().isoformat(),
-                },
-            )
-
-            return SearchResult.from_fastpath(
-                product_url=product_url,
-                price=price_int,
+            search_result = self._build_success_result(
                 query=query,
-                elapsed_ms=self.budget_manager.elapsed() * 1000,
-                product_id=product_id,
-                product_name=product_name,
-                mall=mall if isinstance(mall, str) else None,
-                free_shipping=free_shipping if isinstance(free_shipping, bool) else None,
-                top_prices=top_prices,
-                price_trend=price_trend if isinstance(price_trend, list) else None,
+                source="fastpath",
+                raw_result=result,
+                price_int=price_int,
             )
+            payload = self._build_cache_payload(query=query, result=search_result)
+            if product_code:
+                await self._save_exact_to_cache(product_code, payload)
+            else:
+                await self._save_to_cache(query, payload)
+            return search_result
 
         except AsyncTimeoutError as e:
             self.budget_manager.checkpoint("fastpath_failed")
             logger.warning(f"FastPath timeout: query='{query}', remaining_budget={self.budget_manager.remaining():.2f}s")
+            if product_code:
+                logger.info(f"FastPath direct pcode timed out, continuing fallback path: product_code={product_code}")
+                return None
             if self.strategy.should_fallback_to_slowpath(e):
                 return None
             raise
         except ProductNotFoundException as e:
             self.budget_manager.checkpoint("fastpath_failed")
             logger.debug(f"FastPath: no results found for query='{query}'")
-            if product_code:
-                logger.info(f"FastPath direct pcode failed, retrying query flow: product_code={product_code}")
-                return await self._try_fastpath(query, product_code=None)
             if self.strategy.should_fallback_to_slowpath(e):
                 return None
             raise
@@ -299,10 +315,8 @@ class SearchOrchestrator:
             self.budget_manager.checkpoint("fastpath_failed")
             logger.warning(f"FastPath failed: query='{query}', error={type(e).__name__}: {e}")
             if product_code:
-                logger.info(f"FastPath direct pcode errored, retrying query flow: product_code={product_code}")
-                return await self._try_fastpath(query, product_code=None)
-
-            # Fallback 여부 결정
+                logger.info(f"FastPath direct pcode errored, continuing fallback path: product_code={product_code}")
+                return None
             if not self.strategy.should_fallback_to_slowpath(e):
                 logger.error(f"FastPath failed without fallback capability: {type(e).__name__}")
                 raise
@@ -372,43 +386,18 @@ class SearchOrchestrator:
                 f"SlowPath success: query='{query}', price={price_int}, elapsed={self.budget_manager.elapsed():.2f}s"
             )
 
-            metadata = getattr(result, 'metadata', {}) or {}
-            product_id = metadata.get('product_id') or metadata.get('pcode')
-            product_name = getattr(result, 'product_name', None) or metadata.get('product_name') or query
-            mall = metadata.get('mall')
-            free_shipping = metadata.get('free_shipping')
-            top_prices = metadata.get('top_prices')
-            price_trend = metadata.get('price_trend')
-
-            await self._save_to_cache(
-                query,
-                {
-                    "product_name": product_name,
-                    "product_id": product_id,
-                    "lowest_price": price_int,
-                    "price": price_int,
-                    "product_url": product_url,
-                    "source": "slowpath",
-                    "mall": mall,
-                    "free_shipping": free_shipping,
-                    "top_prices": top_prices,
-                    "price_trend": price_trend,
-                    "updated_at": datetime.utcnow().isoformat(),
-                },
-            )
-
-            return SearchResult.from_slowpath(
-                product_url=product_url,
-                price=price_int,
+            search_result = self._build_success_result(
                 query=query,
-                elapsed_ms=self.budget_manager.elapsed() * 1000,
-                product_id=product_id,
-                product_name=product_name,
-                mall=mall if isinstance(mall, str) else None,
-                free_shipping=free_shipping if isinstance(free_shipping, bool) else None,
-                top_prices=top_prices,
-                price_trend=price_trend if isinstance(price_trend, list) else None,
+                source="slowpath",
+                raw_result=result,
+                price_int=price_int,
             )
+            payload = self._build_cache_payload(query=query, result=search_result)
+            if product_code:
+                await self._save_exact_to_cache(product_code, payload)
+            else:
+                await self._save_to_cache(query, payload)
+            return search_result
 
         except (AsyncTimeoutError, TimeoutError):
             # Catch both asyncio.TimeoutError and built-in TimeoutError
@@ -421,9 +410,6 @@ class SearchOrchestrator:
             )
         except ProductNotFoundException:
             self.budget_manager.checkpoint("slowpath_failed")
-            if product_code:
-                logger.info(f"SlowPath direct pcode failed, retrying query flow: product_code={product_code}")
-                return await self._try_slowpath(query, product_code=None)
             logger.info(f"SlowPath: no results for query='{query}'")
             return SearchResult.no_results(
                 query=query,
@@ -434,10 +420,6 @@ class SearchOrchestrator:
             from src.core.exceptions import BlockedException, ParsingException, TimeoutException
 
             self.budget_manager.checkpoint("slowpath_failed")
-            if product_code and not isinstance(e, (BlockedException, TimeoutException, ParsingException)):
-                logger.info(f"SlowPath direct pcode errored, retrying query flow: product_code={product_code}")
-                return await self._try_slowpath(query, product_code=None)
-
             if isinstance(e, BlockedException):
                 logger.warning(f"SlowPath blocked: query='{query}'")
                 return SearchResult.blocked(
@@ -470,6 +452,91 @@ class SearchOrchestrator:
                 elapsed_ms=self.budget_manager.elapsed() * 1000,
                 error=str(e),
             )
+
+    def _build_cache_result(self, query: str, cached: Dict[str, Any]) -> Optional[SearchResult]:
+        """캐시 payload를 SearchResult로 변환."""
+        product_url = cached.get("url") or cached.get("product_url")
+        price = cached.get("lowest_price") if cached.get("lowest_price") is not None else cached.get("price")
+        product_id = cached.get("product_id")
+        product_name = cached.get("product_name")
+        mall = cached.get("mall")
+        free_shipping = cached.get("free_shipping")
+        top_prices = cached.get("top_prices")
+        price_trend = cached.get("price_trend")
+
+        if not product_url:
+            logger.warning(f"Cache missing product_url: {cached}")
+            return None
+        if price is None:
+            logger.warning(f"Cache missing price: {cached}")
+            return None
+
+        try:
+            price_int = int(price)
+            if price_int <= 0:
+                logger.warning(f"Invalid price in cache: {price}")
+                return None
+        except (TypeError, ValueError) as e:
+            logger.warning(f"Cache price is not a valid integer: {price}, error={e}")
+            return None
+
+        return SearchResult.from_cache(
+            product_url=product_url,
+            price=price_int,
+            query=query,
+            elapsed_ms=self.budget_manager.elapsed() * 1000,
+            product_id=product_id,
+            product_name=product_name if isinstance(product_name, str) else None,
+            mall=mall if isinstance(mall, str) else None,
+            free_shipping=free_shipping if isinstance(free_shipping, bool) else None,
+            top_prices=top_prices if isinstance(top_prices, list) else None,
+            price_trend=price_trend if isinstance(price_trend, list) else None,
+        )
+
+    def _build_success_result(
+        self,
+        query: str,
+        source: str,
+        raw_result: Any,
+        price_int: int,
+    ) -> SearchResult:
+        metadata = getattr(raw_result, "metadata", {}) or {}
+        product_url = getattr(raw_result, "product_url", None)
+        product_id = metadata.get("product_id") or metadata.get("pcode")
+        product_name = getattr(raw_result, "product_name", None) or metadata.get("product_name") or query
+        mall = metadata.get("mall")
+        free_shipping = metadata.get("free_shipping")
+        top_prices = metadata.get("top_prices")
+        price_trend = metadata.get("price_trend")
+
+        builder = SearchResult.from_fastpath if source == "fastpath" else SearchResult.from_slowpath
+        return builder(
+            product_url=product_url,
+            price=price_int,
+            query=query,
+            elapsed_ms=self.budget_manager.elapsed() * 1000,
+            product_id=product_id,
+            product_name=product_name,
+            mall=mall if isinstance(mall, str) else None,
+            free_shipping=free_shipping if isinstance(free_shipping, bool) else None,
+            top_prices=top_prices if isinstance(top_prices, list) else None,
+            price_trend=price_trend if isinstance(price_trend, list) else None,
+        )
+
+    def _build_cache_payload(self, query: str, result: SearchResult) -> Dict[str, Any]:
+        return {
+            "product_name": result.product_name or query,
+            "product_id": result.product_id,
+            "lowest_price": result.price,
+            "price": result.price,
+            "product_url": result.product_url,
+            "source": result.source or "unknown",
+            "mall": result.mall,
+            "free_shipping": result.free_shipping,
+            "top_prices": result.top_prices,
+            "price_trend": result.price_trend,
+            "updated_at": datetime.utcnow().isoformat(),
+        }
 
     async def _save_to_cache(self, query: str, payload: Dict[str, Any]) -> None:
         """결과를 캐시에 저장 (full payload)."""
@@ -511,3 +578,16 @@ class SearchOrchestrator:
         except Exception as e:
             logger.warning(f"Failed to save to cache: {type(e).__name__}: {e}")
             # Cache 저장 실패는 치명적이지 않으므로 무시
+
+    async def _save_exact_to_cache(self, product_code: str, payload: Dict[str, Any]) -> None:
+        """exact 결과를 상품 코드 기반 캐시에 저장."""
+        try:
+            if not product_code or not isinstance(product_code, str):
+                logger.warning(f"Invalid product_code for exact cache: {product_code}")
+                return
+            await self.cache.set_exact(product_code, payload, ttl=21600)
+            logger.debug(f"Exact result cached: product_code='{product_code}'")
+        except AsyncTimeoutError as e:
+            logger.warning(f"Exact cache set timeout: {e}")
+        except Exception as e:
+            logger.warning(f"Failed to save to exact cache: {type(e).__name__}: {e}")

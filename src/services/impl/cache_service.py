@@ -12,7 +12,11 @@ from src.core.exceptions import (
     CacheSerializationException,
 )
 from src.schemas.price_schema import CachedPrice
-from src.utils.hash_utils import generate_cache_key, generate_negative_cache_key
+from src.utils.hash_utils import (
+    generate_cache_key,
+    generate_exact_cache_key,
+    generate_negative_cache_key,
+)
 
 
 class CacheService:
@@ -80,6 +84,32 @@ class CacheService:
             # Cache errors should not break the request - treat as miss
             logger.warning(f"Cache read error (treating as miss): {type(e).__name__}: {e}")
             return None
+
+    def get_exact(self, product_code: str) -> Optional[CachedPrice]:
+        """상품 코드 기반 exact cache 조회."""
+        try:
+            cache_key = generate_exact_cache_key(product_code)
+            cached_data = self.redis_client.get(cache_key)
+
+            if cached_data:
+                logger.info(f"Exact cache hit for key: {cache_key}")
+                try:
+                    data = json.loads(cached_data)
+                    return CachedPrice(**data)
+                except (json.JSONDecodeError, ValueError, TypeError) as e:
+                    logger.warning(f"Exact cache data deserialization failed: {type(e).__name__}: {e}")
+                    try:
+                        self.redis_client.delete(cache_key)
+                        logger.info(f"Deleted corrupted exact cache for key: {cache_key}")
+                    except Exception:
+                        pass
+                    return None
+
+            logger.info(f"Exact cache miss for key: {cache_key}")
+            return None
+        except Exception as e:
+            logger.warning(f"Exact cache read error (treating as miss): {type(e).__name__}: {e}")
+            return None
     
     def set(self, product_name: str, price_data: dict) -> bool:
         """
@@ -125,6 +155,37 @@ class CacheService:
             raise CacheConnectionException(
                 reason="Failed to write cache",
                 details={"error": str(e)}
+            )
+
+    def set_exact(self, product_code: str, price_data: dict) -> bool:
+        """상품 코드 기반 exact cache 저장."""
+        try:
+            cache_key = generate_exact_cache_key(product_code)
+            try:
+                cached_value = json.dumps(price_data, ensure_ascii=False)
+            except (TypeError, ValueError) as e:
+                logger.error(f"Failed to serialize exact cache data: {e}")
+                raise CacheSerializationException(
+                    operation="write",
+                    reason="Failed to serialize exact cache data",
+                    details={"error": str(e)},
+                )
+
+            self.redis_client.setex(cache_key, settings.cache_ttl, cached_value)
+
+            try:
+                ttl = self.redis_client.ttl(cache_key)
+            except Exception:
+                ttl = settings.cache_ttl
+            logger.info(f"Exact cache set for key: {cache_key}, TTL: {ttl}s")
+            return True
+        except CacheSerializationException:
+            raise
+        except Exception as e:
+            logger.error(f"Exact cache write error: {e}")
+            raise CacheConnectionException(
+                reason="Failed to write exact cache",
+                details={"error": str(e)},
             )
 
     def get_negative(self, product_name: str) -> Optional[str]:
@@ -233,6 +294,17 @@ class CacheService:
             return result > 0
         except Exception as e:
             logger.error(f"Cache delete error: {e}")
+            return False
+
+    def delete_exact(self, product_code: str) -> bool:
+        """exact cache 삭제."""
+        try:
+            cache_key = generate_exact_cache_key(product_code)
+            result = self.redis_client.delete(cache_key)
+            logger.info(f"Exact cache deleted for key: {cache_key}")
+            return result > 0
+        except Exception as e:
+            logger.error(f"Exact cache delete error: {e}")
             return False
     
     def health_check(self) -> bool:

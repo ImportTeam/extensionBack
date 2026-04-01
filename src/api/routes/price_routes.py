@@ -4,6 +4,8 @@ HTTP Layer가 Engine Layer로 요청을 위임하는 단순한 Translator 역할
 """
 
 import asyncio
+import json
+from dataclasses import dataclass
 from typing import Optional
 
 from fastapi import APIRouter, BackgroundTasks, Depends, HTTPException
@@ -13,15 +15,21 @@ from src.core.config import settings
 from src.core.database import get_db
 from src.core.logging import logger
 from src.crawlers import FastPathExecutor, SlowPathExecutor, DisabledSlowPathExecutor
-from src.engine import BudgetConfig, CacheAdapter, SearchOrchestrator, SearchStatus
+from src.engine import BudgetConfig, CacheAdapter, SearchOrchestrator, SearchResult, SearchStatus
 from src.repositories.impl.search_log_repository import SearchLogRepository
 from src.schemas.price_schema import (
+    MallPrice,
     PriceData,
     PriceSearchRequest,
     PriceSearchResponse,
+    PriceTrendPoint,
 )
 from src.services.impl.cache_service import CacheService
-from src.utils.text_utils import normalize_for_search_query
+from src.utils.text_utils import (
+    build_option_query_tokens,
+    normalize_for_search_query,
+    parse_fe_options_text,
+)
 from src.utils.url import extract_pcode_from_url
 
 router = APIRouter(prefix="/api/v1", tags=["price"])
@@ -29,6 +37,15 @@ router = APIRouter(prefix="/api/v1", tags=["price"])
 # 싱글톤 서비스
 _cache_service: Optional[CacheService] = None
 _orchestrator: Optional[SearchOrchestrator] = None
+
+
+@dataclass(frozen=True)
+class SearchRequestContext:
+    request_product_name: str
+    normalized_query: str
+    search_query: str
+    product_code: str | None
+    selected_options: list | None
 
 
 def get_cache_service() -> CacheService:
@@ -61,15 +78,7 @@ def get_orchestrator(
                 f"Unsupported crawler_slowpath_backend: {settings.crawler_slowpath_backend}"
             )
 
-        # 12초 예산 설정
-        # 12초 예산 준수: 합계 12.0s 이하
-        # Increased FastPath timeout to 8s for realistic network conditions
-        budget_config = BudgetConfig(
-            total_budget=12.0,
-            cache_timeout=0.5,
-            fastpath_timeout=8.0,
-            slowpath_timeout=3.0,
-        )
+        budget_config = BudgetConfig.from_settings(settings)
 
         _orchestrator = SearchOrchestrator(
             cache_service=cache_adapter,
@@ -118,21 +127,8 @@ async def search_price(
         )
 
     logger.info(f"[API] Search request: product_name (length: {len(request.product_name)})")
-
-    # URL에서 pcode 추출
-    product_code = request.product_code
-    if not product_code and request.current_url:
-        try:
-            product_code = extract_pcode_from_url(request.current_url)
-            logger.debug(f"[API] Extracted pcode from URL")
-        except Exception as e:
-            logger.warning(f"[API] Failed to extract pcode from URL: {e}")
-
-    # 쿼리 정규화
     try:
-        normalized_query = normalize_for_search_query(request.product_name)
-        if not normalized_query:
-            raise ValueError("Normalized query is empty")
+        context = _build_search_context(request)
     except Exception as e:
         logger.error(f"[API] Query normalization failed: {e}")
         return PriceSearchResponse(
@@ -143,162 +139,28 @@ async def search_price(
         )
 
     try:
-        # 선택된 옵션/원본 옵션 문자열을 검색 쿼리에 포함 (signals.yaml 규칙으로 필터링)
-        search_query = normalized_query
-        try:
-            from src.utils.text_utils import parse_fe_options_text, build_option_query_tokens
-
-            pairs: list[tuple[str, str]] = []
-            if request.selected_options:
-                pairs.extend([(opt.name, opt.value) for opt in request.selected_options if opt.name and opt.value])
-            if getattr(request, "options_text", None):
-                pairs.extend(parse_fe_options_text(request.options_text))
-
-            option_tokens = build_option_query_tokens(pairs)
-            if option_tokens:
-                options_str = " ".join(option_tokens)
-                search_query = f"{normalized_query} {options_str}"
-                logger.info(
-                    f"[API] Options applied: tokens={option_tokens[:8]} (total={len(option_tokens)})"
-                )
-            else:
-                if getattr(request, "options_text", None) or request.selected_options:
-                    logger.warning("[API] Options provided but all tokens were filtered out")
-        except Exception as e:
-            logger.warning(f"[API] Failed to apply option filters: {e}")
-        
-        # Engine Layer로 위임 (타임아웃 설정)
         timeout_s = settings.api_price_search_timeout_s
         result = await asyncio.wait_for(
-            orchestrator.search(search_query, product_code=product_code),
+            orchestrator.search(context.search_query, product_code=context.product_code),
             timeout=timeout_s,
         )
 
-        # 백그라운드 로그 저장
-        import json
-        top_prices_json = None
-        price_trend_json = None
-        if result.top_prices:
-            try:
-                top_prices_json = json.dumps(result.top_prices, ensure_ascii=False)
-            except:
-                pass
-        if result.price_trend:
-            try:
-                price_trend_json = json.dumps(result.price_trend, ensure_ascii=False)
-            except:
-                pass
-        
-        # 옵션 정보를 쿼리명에 추가해서 로깅 (필터링된 토큰만)
-        query_with_options = request.product_name
-        try:
-            from src.utils.text_utils import parse_fe_options_text, build_option_query_tokens
-
-            log_pairs: list[tuple[str, str]] = []
-            if request.selected_options:
-                log_pairs.extend([(opt.name, opt.value) for opt in request.selected_options if opt.name and opt.value])
-            if getattr(request, "options_text", None):
-                log_pairs.extend(parse_fe_options_text(request.options_text))
-
-            log_tokens = build_option_query_tokens(log_pairs, max_tokens=10)
-            if log_tokens:
-                query_with_options = f"{request.product_name} [{', '.join(log_tokens)}]"
-        except Exception:
-            pass
-        
         background_tasks.add_task(
             _log_search,
             db=db,
-            query_name=query_with_options,
+            query_name=_build_log_query_name(request),
             origin_price=request.current_price,
             found_price=result.price if result.is_success else None,
             product_id=result.product_id if result.is_success else None,
             status="SUCCESS" if result.is_success else "FAIL",
             source=result.source,
             elapsed_ms=result.elapsed_ms,
-            top_prices=top_prices_json,
-            price_trend=price_trend_json,
+            top_prices=_dump_optional_json(result.top_prices),
+            price_trend=_dump_optional_json(result.price_trend),
         )
 
-        # 성공 응답
         if result.is_success:
-            # result 속성들이 Optional이므로 먼저 non-null 확인
-            lowest_price = result.price if result.price is not None else 0
-            
-            # current_price는 Optional[int]이므로 None 체크 필수
-            is_cheaper = False
-            price_diff = 0
-            
-            if request.current_price is not None and request.current_price > 0 and lowest_price > 0:
-                is_cheaper = lowest_price < request.current_price
-                price_diff = request.current_price - lowest_price
-
-            # result 속성들이 Optional이므로 타입 체크 필수
-            link = result.product_url if result.product_url is not None else ""
-            source = result.source if result.source is not None else "unknown"
-            elapsed_ms = result.elapsed_ms if result.elapsed_ms is not None else 0.0
-            product_id = result.product_id if result.product_id is not None else None
-            resolved_product_name = result.product_name if result.product_name else request.product_name
-            top_prices_data = result.top_prices if result.top_prices is not None else None
-            price_trend_data = result.price_trend if result.price_trend is not None else None
-            
-            # Convert top_prices to MallPrice schema if exists
-            top_prices_list = None
-            top_mall = result.mall if result.mall is not None else None
-            top_free_shipping = result.free_shipping if result.free_shipping is not None else None
-            top_link = None
-            
-            if top_prices_data and isinstance(top_prices_data, list):
-                from src.schemas.price_schema import MallPrice
-                # Convert MallPrice objects to dicts for sorting
-                prices_as_dicts = []
-                for item in top_prices_data:
-                    if isinstance(item, MallPrice):
-                        prices_as_dicts.append(item.model_dump())
-                    elif isinstance(item, dict):
-                        prices_as_dicts.append(item)
-                    else:
-                        continue
-                # Sort by price (ascending) and take TOP 3
-                sorted_prices = sorted(prices_as_dicts, key=lambda x: x.get("price", float('inf')))[:3]
-                top_prices_list = [
-                    MallPrice(
-                        rank=idx+1,  # Re-rank after sorting
-                        mall=item.get("mall", "알 수 없음"),
-                        price=item.get("price", 0),
-                        free_shipping=item.get("free_shipping", False),
-                        delivery=item.get("delivery", ""),
-                        link=item.get("link", ""),
-                    )
-                    for idx, item in enumerate(sorted_prices)
-                ]
-                
-                # TOP 1 (최저가)의 정보를 최저가 판매처로 설정
-                if sorted_prices and len(sorted_prices) > 0:
-                    top_mall = sorted_prices[0].get("mall", "알 수 없음")
-                    top_free_shipping = sorted_prices[0].get("free_shipping", False)
-                    top_link = sorted_prices[0].get("link", link)
-
-            return PriceSearchResponse(
-                status="success",
-                data=PriceData(
-                    product_name=resolved_product_name,
-                    product_id=product_id,
-                    is_cheaper=is_cheaper,
-                    price_diff=price_diff,
-                    lowest_price=lowest_price,
-                    link=top_link if top_link else link,
-                    mall=top_mall,
-                    free_shipping=top_free_shipping,
-                    top_prices=top_prices_list,
-                    price_trend=price_trend_data,
-                    selected_options=request.selected_options,
-                    source=source,
-                    elapsed_ms=elapsed_ms,
-                ),
-                message="검색 완료",
-                error_code=None,
-            )
+            return _build_success_response(request, result)
 
         # 실패 응답
         error_message = _get_error_message(result.status)
@@ -311,7 +173,7 @@ async def search_price(
         )
 
     except asyncio.TimeoutError:
-        logger.error(f"[API] Timeout: query='{normalized_query}'")
+        logger.error(f"[API] Timeout: query='{context.normalized_query}'")
         return PriceSearchResponse(
             status="error",
             data=None,
@@ -320,7 +182,7 @@ async def search_price(
             selected_options=request.selected_options,
         )
     except Exception as e:
-        logger.error(f"[API] Search failed: query='{normalized_query}'", exc_info=True)
+        logger.error(f"[API] Search failed: query='{context.normalized_query}'", exc_info=True)
         return PriceSearchResponse(
             status="error",
             data=None,
@@ -328,6 +190,162 @@ async def search_price(
             error_code="INTERNAL_ERROR",
             selected_options=request.selected_options,
         )
+
+
+def _build_search_context(request: PriceSearchRequest) -> SearchRequestContext:
+    product_code = request.product_code
+    if not product_code and request.current_url:
+        try:
+            product_code = extract_pcode_from_url(request.current_url)
+            logger.debug("[API] Extracted pcode from URL")
+        except Exception as e:
+            logger.warning(f"[API] Failed to extract pcode from URL: {e}")
+
+    normalized_query = normalize_for_search_query(request.product_name)
+    if not normalized_query:
+        raise ValueError("Normalized query is empty")
+
+    try:
+        option_tokens = _build_option_tokens(request)
+    except Exception as e:
+        logger.warning(f"[API] Failed to apply option filters: {e}")
+        option_tokens = []
+    search_query = normalized_query
+    if option_tokens:
+        search_query = f"{normalized_query} {' '.join(option_tokens)}"
+        logger.info(f"[API] Options applied: tokens={option_tokens[:8]} (total={len(option_tokens)})")
+    elif request.options_text or request.selected_options:
+        logger.warning("[API] Options provided but all tokens were filtered out")
+
+    return SearchRequestContext(
+        request_product_name=request.product_name,
+        normalized_query=normalized_query,
+        search_query=search_query,
+        product_code=product_code,
+        selected_options=request.selected_options,
+    )
+
+
+def _build_option_pairs(request: PriceSearchRequest) -> list[tuple[str, str]]:
+    pairs: list[tuple[str, str]] = []
+    if request.selected_options:
+        pairs.extend(
+            [(opt.name, opt.value) for opt in request.selected_options if opt.name and opt.value]
+        )
+    if request.options_text:
+        pairs.extend(parse_fe_options_text(request.options_text))
+    return pairs
+
+
+def _build_option_tokens(request: PriceSearchRequest, max_tokens: int | None = None) -> list[str]:
+    pairs = _build_option_pairs(request)
+    if not pairs:
+        return []
+    kwargs = {"max_tokens": max_tokens} if max_tokens is not None else {}
+    return build_option_query_tokens(pairs, **kwargs)
+
+
+def _build_log_query_name(request: PriceSearchRequest) -> str:
+    try:
+        log_tokens = _build_option_tokens(request, max_tokens=10)
+    except Exception:
+        return request.product_name
+    if not log_tokens:
+        return request.product_name
+    return f"{request.product_name} [{', '.join(log_tokens)}]"
+
+
+def _dump_optional_json(value) -> str | None:
+    if not value:
+        return None
+    try:
+        return json.dumps(value, ensure_ascii=False)
+    except Exception:
+        return None
+
+
+def _to_mall_prices(top_prices_data) -> tuple[list[MallPrice] | None, str | None, bool | None, str | None]:
+    if not isinstance(top_prices_data, list) or not top_prices_data:
+        return None, None, None, None
+
+    prices_as_dicts = []
+    for item in top_prices_data:
+        if isinstance(item, MallPrice):
+            prices_as_dicts.append(item.model_dump())
+        elif isinstance(item, dict):
+            prices_as_dicts.append(item)
+
+    sorted_prices = sorted(prices_as_dicts, key=lambda x: x.get("price", float("inf")))[:3]
+    if not sorted_prices:
+        return None, None, None, None
+
+    mall_prices = [
+        MallPrice(
+            rank=index + 1,
+            mall=item.get("mall", "알 수 없음"),
+            price=item.get("price", 0),
+            free_shipping=item.get("free_shipping", False),
+            delivery=item.get("delivery", ""),
+            link=item.get("link", ""),
+        )
+        for index, item in enumerate(sorted_prices)
+    ]
+    top_item = sorted_prices[0]
+    return (
+        mall_prices,
+        top_item.get("mall", "알 수 없음"),
+        top_item.get("free_shipping", False),
+        top_item.get("link"),
+    )
+
+
+def _to_price_trend_points(price_trend_data) -> list[PriceTrendPoint] | None:
+    if not isinstance(price_trend_data, list):
+        return None
+    points: list[PriceTrendPoint] = []
+    for item in price_trend_data:
+        if isinstance(item, PriceTrendPoint):
+            points.append(item)
+        elif isinstance(item, dict):
+            try:
+                points.append(PriceTrendPoint(**item))
+            except Exception:
+                continue
+    return points or None
+
+
+def _build_success_response(request: PriceSearchRequest, result: SearchResult) -> PriceSearchResponse:
+    lowest_price = result.price if result.price is not None else 0
+    is_cheaper = False
+    price_diff = 0
+    if request.current_price is not None and request.current_price > 0 and lowest_price > 0:
+        is_cheaper = lowest_price < request.current_price
+        price_diff = request.current_price - lowest_price
+
+    link = result.product_url or ""
+    top_prices_list, top_mall, top_free_shipping, top_link = _to_mall_prices(result.top_prices)
+    resolved_product_name = result.product_name or request.product_name
+
+    return PriceSearchResponse(
+        status="success",
+        data=PriceData(
+            product_name=resolved_product_name,
+            product_id=result.product_id,
+            is_cheaper=is_cheaper,
+            price_diff=price_diff,
+            lowest_price=lowest_price,
+            link=top_link or link,
+            mall=top_mall if top_mall is not None else result.mall,
+            free_shipping=top_free_shipping if top_free_shipping is not None else result.free_shipping,
+            top_prices=top_prices_list,
+            price_trend=_to_price_trend_points(result.price_trend),
+            selected_options=request.selected_options,
+            source=result.source or "unknown",
+            elapsed_ms=result.elapsed_ms or 0.0,
+        ),
+        message="검색 완료",
+        error_code=None,
+    )
 
 
 def _get_error_message(status: SearchStatus) -> str:

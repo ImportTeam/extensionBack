@@ -2,8 +2,8 @@
 from pathlib import Path
 
 from dotenv import load_dotenv
+from pydantic import model_validator
 from pydantic_settings import BaseSettings
-from pydantic import field_validator
 
 
 load_dotenv(Path(__file__).resolve().parents[2] / ".env", override=True)
@@ -73,59 +73,52 @@ class Settings(BaseSettings):
     # 요청이 매달린 채로 클라이언트에서 타임아웃되는 상황을 줄입니다.
     # 🔴 기가차드 수정: Playwright 폴백 고려하여 20초로 상향 (기존 14초)
     api_price_search_timeout_s: float = 20.0
+
+    # Engine Orchestrator budget
+    engine_total_budget_s: float = 12.0
+    engine_cache_timeout_s: float = 0.5
+    engine_fastpath_timeout_s: float = 8.0
+    engine_slowpath_timeout_s: float = 3.0
     
     # 로깅
     log_level: str = "INFO"
     
-    @field_validator("cache_ttl")
-    @classmethod
-    def validate_cache_ttl(cls, v: int) -> int:
-        if v <= 0:
+    @model_validator(mode="after")
+    def validate_settings(self) -> "Settings":
+        if self.cache_ttl <= 0:
             raise ValueError("cache_ttl must be positive")
-        return v
-    
-    @field_validator("crawler_timeout")
-    @classmethod
-    def validate_crawler_timeout(cls, v: int) -> int:
-        if v <= 0:
+        if self.crawler_timeout <= 0:
             raise ValueError("crawler_timeout must be positive")
-        return v
-
-    @field_validator("crawler_min_price_threshold")
-    @classmethod
-    def validate_crawler_min_price_threshold(cls, v: int) -> int:
-        if v < 0:
+        if self.crawler_min_price_threshold < 0:
             raise ValueError("crawler_min_price_threshold must be >= 0")
-        return v
-
-    @field_validator("crawler_total_budget_ms", "crawler_http_timeout_ms")
-    @classmethod
-    def validate_crawler_budgets(cls, v: int) -> int:
-        if v <= 0:
+        if self.crawler_total_budget_ms <= 0 or self.crawler_http_timeout_ms <= 0:
             raise ValueError("crawler budgets must be positive")
-        return v
-
-    @field_validator("crawler_browser_concurrency")
-    @classmethod
-    def validate_crawler_concurrency(cls, v: int) -> int:
-        if v <= 0:
+        if self.crawler_browser_concurrency <= 0:
             raise ValueError("crawler_browser_concurrency must be positive")
-        return v
-
-    @field_validator("crawler_slowpath_backend")
-    @classmethod
-    def validate_crawler_slowpath_backend(cls, v: str) -> str:
-        allowed = {"playwright", "disabled", "drissionpage"}
-        if v not in allowed:
-            raise ValueError(f"crawler_slowpath_backend must be one of {sorted(allowed)}")
-        return v
-
-    @field_validator("database_url", "redis_url")
-    @classmethod
-    def validate_required_urls(cls, v: str) -> str:
-        if not v:
+        if self.crawler_slowpath_backend not in {"playwright", "disabled", "drissionpage"}:
+            raise ValueError("crawler_slowpath_backend must be one of ['disabled', 'drissionpage', 'playwright']")
+        if not self.database_url or not self.redis_url:
             raise ValueError("database_url and redis_url must not be empty")
-        return v
+
+        engine_values = (
+            self.engine_total_budget_s,
+            self.engine_cache_timeout_s,
+            self.engine_fastpath_timeout_s,
+            self.engine_slowpath_timeout_s,
+            self.api_price_search_timeout_s,
+        )
+        if any(value <= 0 for value in engine_values):
+            raise ValueError("engine/api budgets must be positive")
+
+        phase_sum = (
+            self.engine_cache_timeout_s
+            + self.engine_fastpath_timeout_s
+            + self.engine_slowpath_timeout_s
+        )
+        if phase_sum > self.engine_total_budget_s:
+            raise ValueError("engine phase budgets must not exceed engine_total_budget_s")
+
+        return self
     
     class Config:
         env_file = Path(__file__).resolve().parents[2] / ".env"

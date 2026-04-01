@@ -8,6 +8,8 @@ from fastapi import BackgroundTasks
 from sqlalchemy import create_engine
 from sqlalchemy.orm import sessionmaker
 
+from src.app import create_app
+from src.core.config import Settings
 from src.api.routes.price_routes import search_price
 from src.engine.result import SearchResult
 from src.repositories.impl.search_log_repository import SearchLogRepository
@@ -83,6 +85,33 @@ async def test_search_response_uses_actual_product_name_and_preserves_metadata()
     assert orchestrator.calls == [("맥북", "12345")]
 
 
+@pytest.mark.asyncio
+async def test_search_uses_pcode_extracted_from_current_url():
+    orchestrator = StubOrchestrator(
+        SearchResult.from_fastpath(
+            product_url="https://prod.danawa.com/info/?pcode=98765",
+            price=150000,
+            query="정규화 검색어",
+            elapsed_ms=111.0,
+            product_id="98765",
+            product_name="추출된 상품",
+        )
+    )
+
+    response = await search_price(
+        request=PriceSearchRequest(
+            product_name="맥북",
+            current_url="https://prod.danawa.com/info/?pcode=98765",
+        ),
+        background_tasks=BackgroundTasks(),
+        db=SimpleNamespace(),  # type: ignore[arg-type]
+        orchestrator=orchestrator,  # type: ignore[arg-type]
+    )
+
+    assert response.status == "success"
+    assert orchestrator.calls == [("맥북", "98765")]
+
+
 def test_search_log_statistics_count_success_cache_hits_and_legacy_hits():
     engine = create_engine("sqlite:///:memory:")
     Base.metadata.create_all(bind=engine)
@@ -150,3 +179,61 @@ def test_weekly_scheduler_runs_synchronously(monkeypatch: pytest.MonkeyPatch):
 
     assert result["status"] == "success"
     assert calls == {"report": 1, "recommendations": 1, "closed": 1}
+
+
+def test_settings_validate_engine_budget_consistency():
+    Settings(
+        database_url="sqlite:///test.db",
+        redis_url="redis://localhost:6379/0",
+        engine_total_budget_s=12.0,
+        engine_cache_timeout_s=0.5,
+        engine_fastpath_timeout_s=8.0,
+        engine_slowpath_timeout_s=3.0,
+    )
+
+    with pytest.raises(ValueError):
+        Settings(
+            database_url="sqlite:///test.db",
+            redis_url="redis://localhost:6379/0",
+            engine_total_budget_s=5.0,
+            engine_cache_timeout_s=1.0,
+            engine_fastpath_timeout_s=3.0,
+            engine_slowpath_timeout_s=2.0,
+        )
+
+
+@pytest.mark.asyncio
+async def test_app_lifecycle_owns_scheduler(monkeypatch: pytest.MonkeyPatch):
+    events = {"start": 0, "shutdown": 0}
+
+    class FakeScheduler:
+        def __init__(self):
+            self.running = False
+
+        def start(self):
+            self.running = True
+            events["start"] += 1
+
+        def shutdown(self, wait: bool = False):
+            assert wait is False
+            self.running = False
+            events["shutdown"] += 1
+
+    monkeypatch.setattr("src.app.init_db", lambda: None)
+    monkeypatch.setattr("src.app.shutdown_shared_http_client", None, raising=False)
+    monkeypatch.setattr(
+        "src.scheduler.weekly_analytics.WeeklyAnalyticsScheduler.schedule_with_apscheduler",
+        lambda: FakeScheduler(),
+    )
+    monkeypatch.setattr(
+        "src.crawlers.http_client.shutdown_shared_http_client",
+        lambda: None,
+    )
+
+    app = create_app()
+    async with app.router.lifespan_context(app):
+        assert hasattr(app.state, "weekly_scheduler")
+        assert app.state.weekly_scheduler.running is True
+
+    assert events == {"start": 1, "shutdown": 1}
+    assert hasattr(app.state, "weekly_scheduler") is False

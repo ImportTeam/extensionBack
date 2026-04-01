@@ -90,6 +90,44 @@ class CacheAdapter:
             logger.warning(f"Cache get failed: {type(e).__name__}: {e}")
             return None
 
+    async def get_exact(self, product_code: str, timeout: float = 0.2) -> Optional[Dict[str, Any]]:
+        """상품 코드 기반 exact cache 조회."""
+        try:
+            if not product_code or not isinstance(product_code, str):
+                logger.warning(f"Invalid product_code for cache.get_exact: {product_code}")
+                return None
+
+            cached = self.cache_service.get_exact(product_code)
+            if not cached:
+                return None
+
+            result: Dict[str, Any] = {
+                "product_url": cached.product_url,
+                "price": int(cached.lowest_price) if cached.lowest_price else 0,
+                "lowest_price": int(cached.lowest_price) if cached.lowest_price else 0,
+                "product_name": cached.product_name,
+                "product_id": getattr(cached, "product_id", None),
+                "mall": cached.mall,
+                "free_shipping": cached.free_shipping,
+                "top_prices": cached.top_prices,
+                "price_trend": cached.price_trend,
+                "source": cached.source,
+                "updated_at": cached.updated_at,
+            }
+            if not result["product_url"] or result["price"] <= 0:
+                logger.warning(f"Invalid exact cache data: {result}")
+                return None
+            return result
+        except AsyncTimeoutError as e:
+            logger.warning(f"Exact cache get timeout: {e}")
+            return None
+        except (AttributeError, TypeError, ValueError) as e:
+            logger.warning(f"Exact cache data deserialization failed: {type(e).__name__}: {e}")
+            return None
+        except Exception as e:
+            logger.warning(f"Exact cache get failed: {type(e).__name__}: {e}")
+            return None
+
     async def set(self, query: str, data: Dict[str, Any], ttl: int = 21600) -> None:
         """캐시 저장
 
@@ -159,3 +197,54 @@ class CacheAdapter:
             logger.warning(f"Cache set timeout: {e}")
         except Exception as e:
             logger.warning(f"Cache set failed: {type(e).__name__}: {e}")
+
+    async def set_exact(self, product_code: str, data: Dict[str, Any], ttl: int = 21600) -> None:
+        """상품 코드 기반 exact cache 저장."""
+        try:
+            if not product_code or not isinstance(product_code, str):
+                logger.warning(f"Invalid product_code for cache.set_exact: {product_code}")
+                return
+
+            if not data or not isinstance(data, dict):
+                logger.warning(f"Invalid data for cache.set_exact: {data}")
+                return
+
+            product_url = data.get("product_url")
+            price = data.get("lowest_price") if data.get("lowest_price") is not None else data.get("price")
+            product_name = data.get("product_name")
+
+            if not product_url or not isinstance(product_url, str):
+                logger.warning("Missing or invalid product_url in exact cache data")
+                return
+            if price is None:
+                logger.warning("Missing price in exact cache data")
+                return
+
+            try:
+                price_int = int(price)
+                if price_int <= 0:
+                    logger.warning(f"Invalid exact cache price value: {price_int}")
+                    return
+            except (TypeError, ValueError) as e:
+                logger.warning(f"Exact cache price is not a valid integer: {price}, error={e}")
+                return
+
+            payload: Dict[str, Any] = {
+                "product_name": product_name if isinstance(product_name, str) else product_code,
+                "product_id": data.get("product_id"),
+                "lowest_price": price_int,
+                "product_url": product_url,
+                "source": data.get("source") or "unknown",
+                "mall": data.get("mall"),
+                "free_shipping": data.get("free_shipping"),
+                "top_prices": data.get("top_prices"),
+                "price_trend": data.get("price_trend"),
+                "updated_at": data.get("updated_at") or datetime.utcnow().isoformat(),
+                "price": price_int,
+            }
+
+            self.cache_service.set_exact(product_code, payload)
+        except AsyncTimeoutError as e:
+            logger.warning(f"Exact cache set timeout: {e}")
+        except Exception as e:
+            logger.warning(f"Exact cache set failed: {type(e).__name__}: {e}")

@@ -31,6 +31,16 @@ class BudgetConfig:
                 f"Sum of timeouts ({sum_timeouts}s) exceeds total budget ({self.total_budget}s)"
             )
 
+    @classmethod
+    def from_settings(cls, settings) -> "BudgetConfig":
+        """애플리케이션 설정에서 엔진 예산을 생성한다."""
+        return cls(
+            total_budget=settings.engine_total_budget_s,
+            cache_timeout=settings.engine_cache_timeout_s,
+            fastpath_timeout=settings.engine_fastpath_timeout_s,
+            slowpath_timeout=settings.engine_slowpath_timeout_s,
+        )
+
 
 class BudgetManager:
     """시간/리소스 예산 관리자
